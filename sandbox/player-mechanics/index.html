@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Player Mechanics Test</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: #2c3e50;
+            color: white;
+        }
+        
+        .component-header {
+            margin-bottom: 20px;
+            padding: 10px;
+            background: #34495e;
+            border-radius: 5px;
+        }
+        
+        .component-header h1 {
+            margin: 0 0 10px 0;
+            color: #2ecc71;
+        }
+        
+        .component-header p {
+            margin: 0;
+            color: #bdc3c7;
+        }
+        
+        .back-link {
+            color: #3498db;
+            text-decoration: none;
+            margin-bottom: 15px;
+            display: inline-block;
+        }
+        
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        
+        #game-container {
+            width: 100%;
+            height: 500px;
+            border: 2px solid #34495e;
+            border-radius: 5px;
+            position: relative;
+        }
+        
+        .controls {
+            margin-top: 15px;
+            padding: 10px;
+            background: #34495e;
+            border-radius: 5px;
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 15px;
+        }
+        
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        
+        .control-group h4 {
+            margin: 0 0 5px 0;
+            color: #2ecc71;
+            font-size: 12px;
+        }
+        
+        .control-group button {
+            padding: 6px 12px;
+            background: #2ecc71;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 11px;
+        }
+        
+        .control-group button:hover {
+            background: #27ae60;
+        }
+        
+        .info-panel {
+            margin-top: 10px;
+            padding: 10px;
+            background: #2c3e50;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+            border: 1px solid #34495e;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        
+        .info-section h4 {
+            margin: 0 0 5px 0;
+            color: #2ecc71;
+        }
+        
+        .info-section div {
+            margin: 2px 0;
+        }
+    </style>
+</head>
+<body>
+    <a href="/sandbox/" class="back-link">← Back to Sandbox</a>
+    
+    <div class="component-header">
+        <h1>Player Mechanics</h1>
+        <p>Test core player movement, interactions, and UI feedback systems. Foundation for all player actions.</p>
+    </div>
+    
+    <div id="game-container"></div>
+    
+    <div class="controls">
+        <div class="control-group">
+            <h4>Movement</h4>
+            <button onclick="testMovement('click')">Test Click-to-Move</button>
+            <button onclick="testMovement('keyboard')">Test Keyboard</button>
+            <button onclick="testMovement('boundaries')">Test Boundaries</button>
+        </div>
+        <div class="control-group">
+            <h4>Interactions</h4>
+            <button onclick="testInteraction('npc')">Test NPC Interaction</button>
+            <button onclick="testInteraction('object')">Test Object Interaction</button>
+            <button onclick="testInteraction('proximity')">Test Proximity</button>
+        </div>
+        <div class="control-group">
+            <h4>UI/UX</h4>
+            <button onclick="testUI('prompts')">Test Interaction Prompts</button>
+            <button onclick="testUI('feedback')">Test Visual Feedback</button>
+            <button onclick="testUI('mobile')">Test Mobile Controls</button>
+        </div>
+    </div>
+    
+    <div class="info-panel">
+        <div class="info-section">
+            <h4>Player Status</h4>
+            <div>Position: <span id="player-pos">0, 0</span></div>
+            <div>Moving: <span id="player-moving">No</span></div>
+            <div>Interacting: <span id="player-interacting">None</span></div>
+            <div>Input Mode: <span id="input-mode">Touch/Click</span></div>
+        </div>
+        <div class="info-section">
+            <h4>Interaction Status</h4>
+            <div>Nearby NPCs: <span id="nearby-npcs">0</span></div>
+            <div>Nearby Objects: <span id="nearby-objects">0</span></div>
+            <div>Active Prompts: <span id="active-prompts">0</span></div>
+            <div>Last Action: <span id="last-action">None</span></div>
+        </div>
+    </div>
+    
+    <script type="module" src="/sandbox/player-mechanics/main.ts"></script>
+</body>
+</html>

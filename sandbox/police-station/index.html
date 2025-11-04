@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Police Station Setting Test</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: #2c3e50;
+            color: white;
+        }
+        
+        .component-header {
+            margin-bottom: 20px;
+            padding: 10px;
+            background: #34495e;
+            border-radius: 5px;
+        }
+        
+        .component-header h1 {
+            margin: 0 0 10px 0;
+            color: #27ae60;
+        }
+        
+        .component-header p {
+            margin: 0;
+            color: #bdc3c7;
+        }
+        
+        .back-link {
+            color: #3498db;
+            text-decoration: none;
+            margin-bottom: 15px;
+            display: inline-block;
+        }
+        
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        
+        #game-container {
+            width: 100%;
+            height: 600px;
+            border: 2px solid #34495e;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <a href="/sandbox/" class="back-link">← Back to Sandbox</a>
+    
+    <div class="component-header">
+        <h1>Police Station Setting</h1>
+        <p>Test game environment, player navigation, and interaction systems.</p>
+    </div>
+    
+    <div id="game-container"></div>
+    
+    <script type="module" src="/sandbox/police-station/main.ts"></script>
+</body>
+</html>

@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tiled Room with Generated Assets - RPG Sandbox</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: #2c3e50;
+            color: white;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        
+        .back-link {
+            color: #3498db;
+            text-decoration: none;
+            margin-bottom: 20px;
+            display: inline-block;
+        }
+        
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        
+        #game-container {
+            width: 800px;
+            height: 600px;
+            margin: 0 auto;
+            border: 2px solid #34495e;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        .instructions {
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 15px;
+            background: #34495e;
+            border-radius: 8px;
+        }
+        
+        .instructions h3 {
+            margin-top: 0;
+            color: #3498db;
+        }
+    </style>
+</head>
+<body>
+    <a href="/sandbox/" class="back-link">← Back to Sandbox</a>
+    
+    <div class="header">
+        <h1>🎨 Tiled Room with Generated Assets</h1>
+        <p>Procedurally generated tile assets with AI-driven NPCs</p>
+    </div>
+    
+    <div id="game-container"></div>
+    
+    <div class="instructions">
+        <h3>Generated Tile Assets:</h3>
+        <ul>
+            <li>🏠 <strong>Floor tiles:</strong> Stone, wood, carpet textures</li>
+            <li>🧱 <strong>Wall tiles:</strong> Brick, stone, wood materials</li>
+            <li>🪑 <strong>Object tiles:</strong> Desks, filing cabinets, furniture</li>
+            <li>🎮 <strong>Character tiles:</strong> Player and NPC sprites</li>
+        </ul>
+        
+        <h3>Features:</h3>
+        <ul>
+            <li>✅ <strong>Procedural generation:</strong> All assets created with ImageMagick</li>
+            <li>✅ <strong>Tile-based rendering:</strong> 32x32 pixel tiles</li>
+            <li>✅ <strong>Interactive objects:</strong> Desks with AI interactions</li>
+            <li>✅ <strong>Smart NPCs:</strong> AI-driven behavior with speech bubbles</li>
+            <li>✅ <strong>Line of sight:</strong> NPCs discover objects and characters</li>
+        </ul>
+        
+        <p><strong>All visual assets generated locally</strong> - no external APIs needed!</p>
+    </div>
+    
+    <script type="module" src="./main.ts"></script>
+</body>
+</html>

@@ -1,0 +1,217 @@
+{
+  "id": "police_station",
+  "name": "Police Station",
+  "description": "The town's police headquarters. Sheriff Martinez runs a tight ship here.",
+  "unlockConditions": [],
+  
+  "environment": {
+    "background": {
+      "type": "color",
+      "value": "#8B7355"
+    },
+    "layout": {
+      "width": 800,
+      "height": 600,
+      "walkableArea": {
+        "x": 70, "y": 120, "width": 660, "height": 330
+      },
+      "walls": [
+        { "x": 50, "y": 100, "width": 700, "height": 20 },
+        { "x": 50, "y": 450, "width": 700, "height": 20 },
+        { "x": 50, "y": 100, "width": 20, "height": 370 },
+        { "x": 730, "y": 100, "width": 20, "height": 370 }
+      ],
+      "areas": [
+        { "id": "reception", "x": 300, "y": 100, "width": 200, "height": 80 },
+        { "id": "evidence_area", "x": 100, "y": 150, "width": 100, "height": 100 }
+      ]
+    },
+    "atmosphere": {
+      "lighting": "bright",
+      "mood": "normal"
+    }
+  },
+  
+  "npcs": [
+    {
+      "id": "sheriff_martinez",
+      "name": "Sheriff Martinez",
+      "position": { "x": 550, "y": 350 },
+      "appearance": {
+        "sprite": "npc_sheriff",
+        "color": "#8b4513",
+        "size": { "width": 40, "height": 60 }
+      },
+      "behavior": {
+        "aiMode": "ai",
+        "personality": "protective, secretive, slightly suspicious of outsiders",
+        "tools": ["hide_evidence", "access_computer"],
+        "idleBehaviors": ["patrol", "check_evidence", "make_calls"],
+        "baseInterval": { "min": 15, "max": 30 }
+      },
+      "dialogue": {
+        "context": "You are the town sheriff. You know about strange happenings but try to downplay them.",
+        "mood": "neutral",
+        "templates": {
+          "greeting": ["Everything's under control here.", "What can I do for you?"],
+          "suspicious": ["I'd prefer if you didn't go poking around.", "Nothing unusual happening."]
+        }
+      },
+      "stateOverrides": {
+        "evidence_discovered": {
+          "dialogue": {
+            "mood": "hostile",
+            "context": "You are angry that someone is investigating. Be defensive and try to end conversations quickly."
+          }
+        }
+      }
+    },
+    {
+      "id": "deputy_collins",
+      "name": "Deputy Collins", 
+      "position": { "x": 250, "y": 300 },
+      "appearance": {
+        "sprite": "npc_deputy",
+        "color": "#4169e1",
+        "size": { "width": 40, "height": 60 }
+      },
+      "behavior": {
+        "aiMode": "template",
+        "personality": "young, eager, helpful",
+        "tools": ["access_computer"],
+        "idleBehaviors": ["patrol", "file_reports"],
+        "baseInterval": { "min": 10, "max": 25 }
+      },
+      "dialogue": {
+        "context": "You are a helpful deputy who wants to assist but is constrained by the sheriff.",
+        "mood": "friendly",
+        "templates": {
+          "greeting": ["I wish I could help more, but...", "The Sheriff knows best, I suppose."],
+          "helpful": ["There have been some odd reports lately.", "I'm still learning the ropes here."]
+        }
+      }
+    }
+  ],
+  
+  "objects": [
+    {
+      "id": "evidence_locker",
+      "name": "Evidence Locker",
+      "position": { "x": 150, "y": 200 },
+      "appearance": {
+        "type": "evidence_locker",
+        "color": "#708090",
+        "size": { "width": 60, "height": 80 }
+      },
+      "interaction": {
+        "prompt": "🔍 Evidence Locker",
+        "range": 50,
+        "action": "examine",
+        "result": [
+          {
+            "type": "showMessage",
+            "parameters": {
+              "message": "A secure metal locker containing case files and evidence."
+            }
+          }
+        ]
+      },
+      "conditions": {
+        "visible": [],
+        "interactive": []
+      },
+      "states": {
+        "hidden": {
+          "appearance": { "color": "#666666" },
+          "interaction": {
+            "prompt": "🔍 Empty Locker",
+            "result": [
+              {
+                "type": "showMessage",
+                "parameters": {
+                  "message": "The locker appears to be empty. Someone has been here recently."
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "sheriff_desk",
+      "name": "Sheriff's Desk",
+      "position": { "x": 600, "y": 300 },
+      "appearance": {
+        "type": "desk",
+        "color": "#8B4513",
+        "size": { "width": 80, "height": 50 }
+      },
+      "interaction": {
+        "prompt": "🔍 Sheriff's Desk",
+        "range": 50,
+        "action": "examine",
+        "result": [
+          {
+            "type": "showMessage",
+            "parameters": {
+              "message": "A cluttered desk with papers and a computer. The Sheriff keeps it locked."
+            }
+          }
+        ]
+      },
+      "conditions": {
+        "visible": [],
+        "interactive": ["deputy_distracted"]
+      }
+    }
+  ],
+  
+  "puzzles": [
+    {
+      "id": "evidence_discovery",
+      "type": "social",
+      "trigger": {
+        "condition": [],
+        "location": "evidence_locker"
+      },
+      "solution": {
+        "type": "conversation",
+        "data": {
+          "npc": "deputy_collins",
+          "requiredTopics": ["strange_reports", "missing_evidence"]
+        }
+      },
+      "rewards": [
+        {
+          "type": "setFlag",
+          "parameters": { "flag": "evidence_discovered" }
+        },
+        {
+          "type": "unlockLocation", 
+          "parameters": { "location": "hospital" }
+        }
+      ],
+      "hints": [
+        "The deputy seems more talkative than the sheriff.",
+        "Ask about recent reports or unusual cases."
+      ]
+    }
+  ],
+  
+  "assets": {
+    "sprites": {
+      "npc_sheriff": "AI_PROMPT: A pixel art police sheriff in brown uniform, stern expression, badge visible",
+      "npc_deputy": "AI_PROMPT: A pixel art young police deputy in blue uniform, friendly face, eager posture"
+    },
+    "sounds": {
+      "ambient": "AI_PROMPT: Subtle police station ambience - radio chatter, typing, footsteps"
+    }
+  },
+  
+  "metadata": {
+    "author": "Game Designer",
+    "version": "1.0",
+    "lastModified": "2025-11-03",
+    "notes": "Central hub for investigation. Sheriff becomes hostile after evidence discovery."
+  }
+}

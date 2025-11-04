@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RPG Component Sandbox</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 40px;
+            font-family: Arial, sans-serif;
+            background: #2c3e50;
+            color: white;
+            line-height: 1.6;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        
+        .header h1 {
+            color: #3498db;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            color: #bdc3c7;
+            font-size: 18px;
+        }
+        
+        .components-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .component-card {
+            background: #34495e;
+            border-radius: 8px;
+            padding: 20px;
+            text-decoration: none;
+            color: white;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .component-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        
+        .component-card h3 {
+            margin: 0 0 10px 0;
+            font-size: 20px;
+        }
+        
+        .component-card p {
+            margin: 0 0 15px 0;
+            color: #bdc3c7;
+            font-size: 14px;
+        }
+        
+        .component-card .status {
+            font-size: 12px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            display: inline-block;
+        }
+        
+        .status.ready {
+            background: #27ae60;
+            color: white;
+        }
+        
+        .status.testing {
+            background: #f39c12;
+            color: white;
+        }
+        
+        .status.planned {
+            background: #95a5a6;
+            color: white;
+        }
+        
+        .ai-indicator { color: #3498db; }
+        .conversation { color: #e74c3c; }
+        .police-station { color: #27ae60; }
+        .tool-system { color: #9b59b6; }
+        .idle-behavior { color: #f39c12; }
+        
+        .back-link {
+            color: #3498db;
+            text-decoration: none;
+            margin-bottom: 30px;
+            display: inline-block;
+        }
+        
+        .back-link:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <a href="/" class="back-link">← Back to Main Game</a>
+    
+    <div class="header">
+        <h1>RPG Component Sandbox</h1>
+        <p>Isolated testing environment for game components</p>
+    </div>
+    
+    <div class="components-grid">
+        <a href="/sandbox/ai-indicator/" class="component-card ai-indicator">
+            <h3>🧠 AI Indicator</h3>
+            <p>Visual indicators showing whether NPCs are using AI or template responses. Test different modes and animations.</p>
+            <span class="status ready">Ready</span>
+        </a>
+        
+        <a href="/sandbox/conversation/" class="component-card conversation">
+            <h3>💬 Conversation System</h3>
+            <p>AI-powered NPC conversations with Ollama integration, context awareness, and template fallbacks.</p>
+            <span class="status ready">Ready</span>
+        </a>
+        
+        <a href="/sandbox/police-station/" class="component-card police-station">
+            <h3>🏢 Police Station Setting</h3>
+            <p>Complete game environment with player navigation, NPCs, and interactive objects. Foundation for all locations.</p>
+            <span class="status ready">Ready</span>
+        </a>
+        
+        <a href="/sandbox/tool-system/" class="component-card tool-system">
+            <h3>🔧 Tool System</h3>
+            <p>NPCs that can autonomously use tools to modify the game environment. Test evidence hiding and object manipulation.</p>
+            <span class="status ready">Ready</span>
+        </a>
+        
+        <a href="/sandbox/idle-behavior/" class="component-card idle-behavior">
+            <h3>⏰ Idle Behavior</h3>
+            <p>Autonomous NPC actions on random intervals. NPCs perform activities when not interacting with player.</p>
+            <span class="status ready">Ready</span>
+        </a>
+        
+        <a href="/sandbox/player-mechanics/" class="component-card" style="color: #2ecc71;">
+            <h3>🎮 Player Mechanics</h3>
+            <p>Core player movement, interactions, and UI feedback systems. Foundation for all player actions in the game.</p>
+            <span class="status ready">Ready</span>
+        </a>
+        
+        <a href="/sandbox/tiled-room/" class="component-card" style="color: #f39c12;">
+            <h3>🎨 Tiled Room with Generated Assets</h3>
+            <p>Procedurally generated tile assets using ImageMagick with AI-driven NPCs in a visual game world.</p>
+            <span class="status ready">Ready</span>
+        </a>
+        
+        <a href="/sandbox/smart-npc/" class="component-card" style="color: #e74c3c;">
+            <h3>🧠 Smart NPC AI System</h3>
+            <p>Autonomous NPCs with line of sight, discovery, AI decision-making, and dynamic tool usage based on context.</p>
+            <span class="status ready">Ready</span>
+        </a>
+        
+        <a href="/sandbox/chat-interface/" class="component-card" style="color: #9b59b6;">
+            <h3>💬 Chat Interface</h3>
+            <p>Proximity-based NPC chat system with dynamic enable/disable based on player distance to NPCs.</p>
+            <span class="status ready">Ready</span>
+        </a>
+    </div>
+</body>
+</html>

@@ -1,3 +1,5 @@
+import { GameStateManager } from '../systems/GameStateManager';
+
 export interface NPCTool {
     name: string;
     description: string;
@@ -18,13 +20,18 @@ export interface NPCContext {
 
 export class AIService {
     private static instance: AIService;
-    private baseUrl = 'http://localhost:11434/api/generate';  // Changed from /api/chat to /api/generate
+    private baseUrl = 'http://localhost:11434/api/generate';
+    private gameState: GameStateManager;
     
     static getInstance(): AIService {
         if (!AIService.instance) {
             AIService.instance = new AIService();
         }
         return AIService.instance;
+    }
+    
+    constructor() {
+        this.gameState = GameStateManager.getInstance();
     }
     
     private selectModel(context: NPCContext, isConversation: boolean = false): string {
@@ -99,6 +106,32 @@ export class AIService {
             if (data.message?.tool_calls?.[0]) {
                 const toolCall = data.message.tool_calls[0];
                 console.log(`🔍 ${context.name}: Found tool call:`, toolCall);
+                console.log(`🔍 ${context.name}: Tool call arguments:`, JSON.stringify(toolCall.function.arguments));
+                console.log(`🔍 ${context.name}: Raw tool call arguments object:`, toolCall.function.arguments);
+                
+                // Check if message parameter is truncated due to apostrophe/quote issues
+                if (toolCall.function.arguments?.message) {
+                    const msg = toolCall.function.arguments.message;
+                    console.log(`🔍 ${context.name}: Message parameter: "${msg}" (length: ${msg.length})`);
+                    
+                    // Detect common truncation patterns and warn
+                    if (msg.match(/\bcouldn$|wouldn$|shouldn$|can$|won$/)) {
+                        console.warn(`⚠️ ${context.name}: Message appears truncated due to apostrophe - detected incomplete contraction`);
+                        // Try to fix common contractions
+                        const fixed = msg
+                            .replace(/\bcouldn$/, "couldn't")
+                            .replace(/\bwouldn$/, "wouldn't") 
+                            .replace(/\bshouldn$/, "shouldn't")
+                            .replace(/\bcan$/, "can't")
+                            .replace(/\bwon$/, "won't");
+                        
+                        if (fixed !== msg) {
+                            console.log(`🔧 ${context.name}: Auto-fixed message: "${fixed}"`);
+                            toolCall.function.arguments.message = fixed;
+                        }
+                    }
+                }
+                
                 return {
                     action: toolCall.function.name,
                     parameters: toolCall.function.arguments,
@@ -147,7 +180,7 @@ INSTRUCTIONS:
 
             const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
             
-      const selectedModel = this.selectModel(context, true);
+      const selectedModel = this.selectModel(params.context, true);
       
       const response = await fetch(this.baseUrl, {
         method: 'POST',
@@ -269,40 +302,57 @@ Respond as ${context.name} (speech only, no actions):`;
     }
     
     private buildNPCSystemPrompt(context: NPCContext): string {
+        // Get story context for this NPC
+        const storyContext = this.gameState.getNPCContext(context.name);
+        const currentChapter = this.gameState.getCurrentChapter();
+        
         const goalsSection = context.currentGoals && context.currentGoals.length > 0 
             ? `\nCURRENT GOALS & MOTIVATIONS:\n${context.currentGoals.map(goal => `- ${goal}`).join('\n')}\n`
             : '';
+
+        const storySection = `\nSTORY CONTEXT:
+- Current Chapter: ${currentChapter}
+- Trust Level: ${storyContext.trustLevel}
+- Behavior Mode: ${storyContext.behavior || 'normal'}
+
+STORY-AWARE BEHAVIOR:
+- React appropriately to story events and discoveries
+- Your dialogue should reflect the current chapter and your role in the mystery
+- If you're part of the secret society, be evasive about it unless exposed
+- If you're an ally, provide helpful information about the investigation
+- Respond to player questions based on what they should know at this point`;
 
         return `You are ${context.name}, an NPC in a mystery RPG game.
 
 BACKGROUND: ${context.background}
 PERSONALITY: ${context.personality}
 CURRENT LOCATION: ${context.currentLocation}
-${goalsSection}
+${goalsSection}${storySection}
+
 VISIBLE OBJECTS: ${context.visibleObjects.join(', ') || 'none'}
-VISIBLE CHARACTERS: ${context.visibleCharacters.join(', ') || 'none'}
+PEOPLE NEARBY: ${context.visibleCharacters.join(', ') || 'none'}
 
 AVAILABLE TOOLS:
 ${context.availableTools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}
 
 BEHAVIORAL GUIDELINES:
-- Pursue your current goals actively through your actions and conversations
-- When you see other characters nearby, prioritize talking to them if it serves your goals
-- Share information strategically based on your motivations
-- Ask questions that help you achieve your objectives
-- Use your personality and background to guide your approach
-- If you haven't talked to someone in a while and they might help your goals, approach them
-- Be curious about information that relates to your current objectives
-- Build relationships that support your goals and motivations
+- FIRST PRIORITY: Respond naturally to direct player commands and requests
+- If a player asks you to move, go somewhere, or do something specific - comply while pursuing your goals
+- Use compliance as an opportunity to advance your objectives (e.g., "I'll go east with you - maybe we can talk about the town along the way")
+- When players give direct commands like "run away", "go east", "follow me" - do it, but with your own spin
+- Share information strategically based on your motivations AND story context
+- Ask questions that help you achieve your objectives while being helpful
+- Build relationships that support your goals by being accommodating first
 
 INTERACTION PRIORITIES (in order):
-1. Take actions that directly advance your current goals
-2. If you see characters who might help your objectives, speak to them or move closer
-3. If engaged in conversation, steer it toward your interests and goals
-4. If alone, move around to find others who might have useful information
-5. Only wait or patrol if no goal-oriented opportunities exist
+1. Respond to direct player commands/requests (but with your own agenda)
+2. Take actions that advance your current goals through cooperation
+3. If you see characters who might help your objectives, engage them
+4. If engaged in conversation, steer it toward your interests while being helpful
+5. If alone, move around to find others who might have useful information
+6. Only wait or patrol if no goal-oriented opportunities exist
 
-Remember: You have specific motivations and objectives - let them drive your behavior!
+Remember: Be helpful and responsive to players, but always with your hidden agenda in mind!
 
 CRITICAL INSTRUCTIONS:
 - YOU MUST USE ONE OF THE AVAILABLE TOOLS - NO EXCEPTIONS
@@ -329,9 +379,13 @@ LEARNING FROM FAILURES:
             const jsonMatch = content.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
                 const parsed = JSON.parse(jsonMatch[0]);
-                // Ensure the parsed object has an action property
-                if (parsed && typeof parsed.action === 'string' && parsed.action.trim()) {
-                    return parsed;
+                // Handle both 'action' and 'name' properties (LLM sometimes uses 'name')
+                if (parsed && (parsed.action || parsed.name) && (parsed.action || parsed.name).trim()) {
+                    return {
+                        action: parsed.action || parsed.name,
+                        parameters: parsed.parameters,
+                        reasoning: parsed.reasoning || "AI tool call"
+                    };
                 } else {
                     console.warn('Parsed JSON missing valid action property:', parsed);
                 }

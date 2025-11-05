@@ -13,6 +13,8 @@ export class SpeechBubble {
     }
     
     show(x: number, y: number, message: string, speaker: string = 'NPC', autoHide: boolean = false) {
+        console.log(`🎈 SpeechBubble.show called for ${speaker} with message: "${message}" (length: ${message.length})`);
+        
         // Clean up existing bubble
         this.hide();
         

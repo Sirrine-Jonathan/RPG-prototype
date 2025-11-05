@@ -24,6 +24,10 @@ export abstract class InteractiveObject {
         this.sprite = scene.add.rectangle(x, y, 30, 30, color);
         this.sprite.setStrokeStyle(2, 0xffffff);
         
+        // Make interactive for player clicks
+        this.sprite.setInteractive();
+        this.sprite.on('pointerdown', () => this.onPlayerInteract());
+        
         this.nameText = scene.add.text(x, y - 25, name, {
             fontSize: '10px',
             color: '#ffffff',
@@ -46,6 +50,21 @@ export abstract class InteractiveObject {
 
     // Handle interaction from NPC
     abstract handleInteraction(toolName: string, parameters?: any): InteractionResult;
+    
+    // Handle player interaction (default action)
+    protected onPlayerInteract(): void {
+        const tools = this.getOfferedTools();
+        if (tools.length > 0) {
+            // Use first available tool as default player action
+            const defaultTool = tools[0];
+            const result = this.handleInteraction(defaultTool.name);
+            
+            this.showActionBubble(result.message || `Used ${defaultTool.name.replace('_', ' ')}`);
+            
+            // Emit story event for player interactions
+            this.scene.events.emit('interact', this.id, defaultTool.name);
+        }
+    }
 
     // Register event listeners for this object's tools
     protected registerToolEvents(): void {

@@ -114,8 +114,8 @@ export class AIService {
                     const msg = toolCall.function.arguments.message;
                     console.log(`🔍 ${context.name}: Message parameter: "${msg}" (length: ${msg.length})`);
                     
-                    // Detect common truncation patterns and warn
-                    if (msg.match(/\bcouldn$|wouldn$|shouldn$|can$|won$/)) {
+                    // Detect incomplete contractions
+                    if (msg.match(/\b(couldn|wouldn|shouldn|can|won|don|isn|aren|wasn|haven|hasn)\b$/)) {
                         console.warn(`⚠️ ${context.name}: Message appears truncated due to apostrophe - detected incomplete contraction`);
                         // Try to fix common contractions
                         const fixed = msg
@@ -123,12 +123,40 @@ export class AIService {
                             .replace(/\bwouldn$/, "wouldn't") 
                             .replace(/\bshouldn$/, "shouldn't")
                             .replace(/\bcan$/, "can't")
-                            .replace(/\bwon$/, "won't");
+                            .replace(/\bwon$/, "won't")
+                            .replace(/\bdon$/, "don't")
+                            .replace(/\bisn$/, "isn't")
+                            .replace(/\baren$/, "aren't")
+                            .replace(/\bwasn$/, "wasn't")
+                            .replace(/\bhaven$/, "haven't")
+                            .replace(/\bhasn$/, "hasn't");
                         
                         if (fixed !== msg) {
                             console.log(`🔧 ${context.name}: Auto-fixed message: "${fixed}"`);
                             toolCall.function.arguments.message = fixed;
                         }
+                    }
+                    
+                    // Check for incomplete sentences that end with contractions but no completion
+                    if (msg.match(/\b(couldn't|wouldn't|shouldn't|can't|won't|don't|isn't|aren't|wasn't|haven't|hasn't)\s*$/)) {
+                        console.warn(`⚠️ ${context.name}: Message ends with incomplete contraction: "${msg}"`);
+                        // Generate a fallback completion
+                        const fallbacks = [
+                            "help but notice something strange here.",
+                            "believe what I'm seeing.",
+                            "understand what's happening.",
+                            "figure out what's going on.",
+                            "make sense of this situation."
+                        ];
+                        const completion = fallbacks[Math.floor(Math.random() * fallbacks.length)];
+                        const fixed = msg + " " + completion;
+                        console.log(`🔧 ${context.name}: Completed incomplete message: "${fixed}"`);
+                        toolCall.function.arguments.message = fixed;
+                    }
+                    
+                    // Also check for incomplete sentences that end abruptly
+                    if (msg.length < 10 && !msg.match(/[.!?]$/)) {
+                        console.warn(`⚠️ ${context.name}: Message appears incomplete (too short without punctuation): "${msg}"`);
                     }
                 }
                 
@@ -279,6 +307,52 @@ Respond as ${context.name} (speech only, no actions):`;
         }
     }
     
+    async generateEventResponse(context: NPCContext, eventType: string, eventData: any, conversationMessages: any[]): Promise<{ action: string; parameters?: any; reasoning?: string; tool_calls?: any }> {
+        try {
+            let eventContext = '';
+            
+            switch (eventType) {
+                case 'speech_heard':
+                    eventContext = `You just heard ${eventData.speaker} say: "${eventData.message}"`;
+                    break;
+                case 'discovery':
+                    eventContext = `You noticed something new: ${eventData.discovered.join(', ')}`;
+                    break;
+                default:
+                    eventContext = `Something happened: ${JSON.stringify(eventData)}`;
+            }
+
+            console.log(`🎯 Event Response for ${context.name}: ${eventContext}`);
+
+            const systemPrompt = this.buildNPCSystemPrompt(context);
+            const eventPrompt = `${eventContext}
+
+React to this event using any of your available tools. You can:
+- Use "speak" to respond verbally
+- Use movement tools to approach or investigate
+- Use interaction tools with nearby objects
+- Or any other available action that makes sense
+
+Choose the most appropriate response for your character.`;
+
+            console.log(`📝 Event Prompt for ${context.name}: "${eventPrompt}"`);
+
+            const messages = [
+                { role: 'system', content: systemPrompt },
+                ...conversationMessages.slice(-8),
+                { role: 'user', content: eventPrompt }
+            ];
+
+            console.log(`📨 Sending ${messages.length} messages to LLM for ${context.name} event response`);
+
+            return await this.generateNPCAction(context, messages);
+            
+        } catch (error) {
+            console.error('Event response generation failed:', error);
+            return this.getFallbackAction(context);
+        }
+    }
+    
     private cleanResponse(response: string): string {
         return response.trim().replace(/^["']|["']$/g, '');
     }
@@ -322,13 +396,18 @@ STORY-AWARE BEHAVIOR:
 - If you're an ally, provide helpful information about the investigation
 - Respond to player questions based on what they should know at this point`;
 
+        const conversationContext = context.conversationHistory && context.conversationHistory.length > 0
+            ? `\nRECENT CONVERSATION:\n${context.conversationHistory.slice(-3).map(msg => 
+                `${msg.name || 'Unknown'}: ${msg.content}`
+              ).join('\n')}\n`
+            : '';
+
         return `You are ${context.name}, an NPC in a mystery RPG game.
 
 BACKGROUND: ${context.background}
 PERSONALITY: ${context.personality}
 CURRENT LOCATION: ${context.currentLocation}
-${goalsSection}${storySection}
-
+${goalsSection}${storySection}${conversationContext}
 VISIBLE OBJECTS: ${context.visibleObjects.join(', ') || 'none'}
 PEOPLE NEARBY: ${context.visibleCharacters.join(', ') || 'none'}
 
@@ -336,7 +415,10 @@ AVAILABLE TOOLS:
 ${context.availableTools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}
 
 BEHAVIORAL GUIDELINES:
-- FIRST PRIORITY: Respond naturally to direct player commands and requests
+- CRITICAL: When a player speaks to you directly (says your name, greets you, asks you questions), respond TO THEM directly
+- Use "you" when addressing the player, not "the visitor" or third person references
+- If player says "Hey Sarah" respond like "Hello! How can I help you?" not "I should talk to the visitor"
+- When a player addresses you directly, ALWAYS use "speak" tool to respond - never ignore them
 - If a player asks you to move, go somewhere, or do something specific - comply while pursuing your goals
 - Use compliance as an opportunity to advance your objectives (e.g., "I'll go east with you - maybe we can talk about the town along the way")
 - When players give direct commands like "run away", "go east", "follow me" - do it, but with your own spin
@@ -345,12 +427,13 @@ BEHAVIORAL GUIDELINES:
 - Build relationships that support your goals by being accommodating first
 
 INTERACTION PRIORITIES (in order):
-1. Respond to direct player commands/requests (but with your own agenda)
-2. Take actions that advance your current goals through cooperation
-3. If you see characters who might help your objectives, engage them
-4. If engaged in conversation, steer it toward your interests while being helpful
-5. If alone, move around to find others who might have useful information
-6. Only wait or patrol if no goal-oriented opportunities exist
+1. RESPOND TO PLAYER SPEECH - If a player spoke to you, use "speak" tool to reply (MANDATORY)
+2. Respond to direct player commands/requests (but with your own agenda)
+3. Take actions that advance your current goals through cooperation
+4. If you see characters who might help your objectives, engage them
+5. If engaged in conversation, steer it toward your interests while being helpful
+6. If alone, move around to find others who might have useful information
+7. Only wait or patrol if no goal-oriented opportunities exist
 
 Remember: Be helpful and responsive to players, but always with your hidden agenda in mind!
 
@@ -360,6 +443,14 @@ CRITICAL INSTRUCTIONS:
 - ONLY respond with valid JSON: {"action": "tool_name", "parameters": {...}, "reasoning": "brief reason"}
 - Keep reasoning under 20 words and relate it to your goals when possible
 - ACT in ways that advance your current objectives
+
+SPEAK TOOL REQUIREMENTS:
+- When using the "speak" tool, ALWAYS provide a COMPLETE sentence or thought
+- NEVER end messages with incomplete contractions like "I couldn't" or "I don't"
+- If you start a sentence, finish it completely
+- Examples: "I couldn't help but notice..." NOT "I couldn't"
+- Examples: "I don't think that's right" NOT "I don't"
+- Make your speech meaningful and complete
 
 LEARNING FROM FAILURES:
 - NEVER repeat an action that just failed (check your conversation history)

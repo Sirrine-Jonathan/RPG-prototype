@@ -4,7 +4,7 @@ import { InteractiveObject } from "./InteractiveObject";
 import { SpeechBubble } from "../ui/SpeechBubble";
 import { Pathfinding } from "../utils/Pathfinding";
 
-const ACTION_DELAY = 5000; // 5 seconds between actions
+const ACTION_DELAY = 20000; // 20 seconds between timed actions (fallback only)
 const LINE_OF_SIGHT_RANGE = 150;
 
 export interface Character {
@@ -25,14 +25,13 @@ export class SmartNPC implements Character {
   private aiService: AIService;
   private actionTimer?: Phaser.Time.TimerEvent;
   private speechBubble: SpeechBubble;
-  private isInPlayerConversation: boolean = false;
-  private isCurrentlySpeaking: boolean = false;
-  private isProcessingTownSpeech: boolean = false;
 
   // LLM request tracking
   private lastLLMRequest: number = 0;
   private llmRequestCount: number = 0;
   private activityTimer?: Phaser.Time.TimerEvent;
+  private lastEventTime: number = 0; // Track when last event occurred
+  private pendingLLMRequest?: Promise<any>; // Track in-flight requests
 
   // Discovery and awareness
   private discoveredObjects: Set<string> = new Set();
@@ -138,32 +137,36 @@ export class SmartNPC implements Character {
 
   private startAILoop(): void {
     console.log(`🧠 ${this.name}: Starting AI loop`);
-    // Stagger NPC startup to prevent simultaneous LLM requests
-    const delay = Math.random() * 3000; // 0-3 second random delay
-    setTimeout(() => {
-      this.performAIAction();
-    }, delay);
+    // Start with initial timed action
+    this.resetActionTimer();
   }
 
-  private async performAIAction(): Promise<void> {
-    // Skip AI actions if in player conversation (but allow when processing town speech for tool-based responses)
-    if (this.isInPlayerConversation) {
-      console.log(`⏸️ ${this.name}: Skipping AI action - in player conversation`);
-      return;
-    }
-
+  private async performAIAction(eventType?: string, eventData?: any): Promise<void> {
     // Update line of sight and check proximity
     this.updateLineOfSight();
-
-    // Check if player moved away during conversation
-    if (this.isInPlayerConversation && !this.isPlayerNearby()) {
-      console.log(`🚶 ${this.name}: Player moved away, ending conversation`);
-      this.isInPlayerConversation = false;
-    }
 
     const context = this.buildAIContext();
 
     try {
+      // If this is an event-driven action, cancel any pending timed requests
+      if (eventType && eventData && this.pendingLLMRequest) {
+        console.log(`🚫 ${this.name}: Cancelling pending timed request due to event: ${eventType}`);
+        // Note: We can't actually cancel the HTTP request, but we can ignore its result
+        this.pendingLLMRequest = undefined;
+      }
+
+      // For timed actions, check if enough time has passed since last event
+      if (!eventType) {
+        const timeSinceLastEvent = Date.now() - this.lastEventTime;
+        const MIN_INACTIVITY_TIME = 15000; // 15 seconds minimum inactivity
+        
+        if (timeSinceLastEvent < MIN_INACTIVITY_TIME) {
+          console.log(`⏰ ${this.name}: Skipping timed action - only ${timeSinceLastEvent}ms since last event (need ${MIN_INACTIVITY_TIME}ms)`);
+          this.resetActionTimer();
+          return;
+        }
+      }
+
       // Track LLM request frequency
       const now = Date.now();
       const timeSinceLastRequest = now - this.lastLLMRequest;
@@ -174,10 +177,34 @@ export class SmartNPC implements Character {
         `🕐 ${this.name}: LLM Request #${this.llmRequestCount} (${timeSinceLastRequest}ms since last request)`
       );
 
-      const decision = await this.aiService.generateNPCAction(
-        context,
-        this.conversationMessages
-      );
+      let decision;
+      let requestPromise;
+      
+      // Use event-driven response if we have an event, otherwise use regular action generation
+      if (eventType && eventData) {
+        console.log(`🎯 ${this.name}: Processing event: ${eventType}`, eventData);
+        this.lastEventTime = now; // Update event time
+        requestPromise = this.aiService.generateEventResponse(
+          context,
+          eventType,
+          eventData,
+          this.conversationMessages
+        );
+      } else {
+        console.log(`⏰ ${this.name}: Timed action (no recent events)`);
+        requestPromise = this.aiService.generateNPCAction(
+          context,
+          this.conversationMessages
+        );
+        this.pendingLLMRequest = requestPromise; // Track timed requests
+      }
+
+      decision = await requestPromise;
+
+      // Clear pending request tracking
+      if (this.pendingLLMRequest === requestPromise) {
+        this.pendingLLMRequest = undefined;
+      }
 
       console.log(`🤖 ${this.name}: LLM Decision:`, {
         action: decision.action,
@@ -224,19 +251,31 @@ export class SmartNPC implements Character {
         this.conversationMessages = this.conversationMessages.slice(-10);
       }
 
-      // Continue AI loop
-      setTimeout(() => {
-        if (!this.isInPlayerConversation) {
-          this.performAIAction();
-        }
-      }, ACTION_DELAY);
+      // Reset the timer for next timed action
+      this.resetActionTimer();
+      
     } catch (error) {
       console.error(`AI action failed for ${this.name}:`, error);
-      setTimeout(() => {
-        if (!this.isInPlayerConversation) {
-          this.performAIAction();
-        }
-      }, ACTION_DELAY);
+      // Clear pending request tracking on error
+      this.pendingLLMRequest = undefined;
+      this.resetActionTimer();
+    }
+  }
+
+  private resetActionTimer(): void {
+    // Clear existing timer
+    if (this.actionTimer) {
+      this.actionTimer.destroy();
+    }
+    
+    // Only set timer if not in player conversation
+    if (!this.isInPlayerConversation) {
+      this.actionTimer = this.scene.time.addEvent({
+        delay: ACTION_DELAY,
+        callback: () => this.performAIAction(),
+        callbackScope: this,
+        loop: false
+      });
     }
   }
 
@@ -286,7 +325,10 @@ export class SmartNPC implements Character {
       .map((char) => char!.name);
 
     const availableTools = this.getAvailableTools();
-    const contextHistory = this.conversationMessages.slice(-5);
+    
+    // Include only messages this NPC actually heard
+    const heardMessages = this.getHeardMessages();
+    const contextHistory = heardMessages.slice(-8); // More context for better responses
 
     // Add specific goals and motivations based on character
     const goals = this.getCharacterGoals();
@@ -372,6 +414,15 @@ export class SmartNPC implements Character {
   private getAvailableTools(): NPCTool[] {
     const tools: NPCTool[] = [];
 
+    // PRIORITY: Add speak tool FIRST - NPCs should prioritize communication
+    tools.push(
+      { 
+        name: "speak", 
+        description: "Say something to nearby characters",
+        parameters: { message: "string" }
+      }
+    );
+
     // Always include basic tools
     tools.push(
       { name: "wait", description: "Do nothing and observe the surroundings" }
@@ -428,15 +479,6 @@ export class SmartNPC implements Character {
         });
       }
     });
-
-    // Always add speak tool - NPCs can always communicate
-    tools.push(
-      { 
-        name: "speak", 
-        description: "Say something to nearby characters",
-        parameters: { message: "string" }
-      }
-    );
 
     console.log(
       `🔧 ${this.name}: Available tools:`,
@@ -759,10 +801,13 @@ export class SmartNPC implements Character {
       data.position.y
     );
 
-    const HEARING_RANGE = 200;
-    if (distance > HEARING_RANGE) return;
+    const HEARING_RANGE = 120; // Reduced from 200 to make conversations more intimate
+    if (distance > HEARING_RANGE) {
+      console.log(`🔇 ${this.name}: Too far from ${data.speaker} (distance: ${Math.round(distance)}, range: ${HEARING_RANGE})`);
+      return;
+    }
 
-    console.log(`👂 CONVO ${this.name}: Heard ${data.speaker} nearby"`);
+    console.log(`👂 ${this.name}: Heard ${data.speaker} nearby (distance: ${Math.round(distance)})`);
 
     // Find all NPCs who can hear this message
     const hearers = this.findNPCsInRange(data.position, HEARING_RANGE);
@@ -775,31 +820,30 @@ export class SmartNPC implements Character {
       hearers: hearers
     });
 
-    // Respond after a delay if not currently speaking and should engage
-    if (!this.isCurrentlySpeaking && this.shouldEngageWithSpeech(data)) {
-      this.isCurrentlySpeaking = true;
-      this.isProcessingTownSpeech = true;
-      setTimeout(async () => {
-        try {
-          const context = this.buildAIContext();
-          
-          // Build conversation context including recent history (only messages this NPC heard)
-          const heardMessages = this.getHeardMessages();
-          console.log(`🔍 ${this.name}: Heard messages for context:`, heardMessages.map(m => `${m.name}: "${m.content}"`));
-          console.log(`🔍 ${this.name}: All conversation messages:`, this.conversationMessages.map(m => `${m.name}: "${m.content}"`));
-          
-          const recentHistory = heardMessages.slice(-6).map(msg => 
-            `${msg.name || 'Unknown'}: ${msg.content}`
-          ).join('\n');
-          
-          this.performAIAction(); // Use unified tool system - AI can choose ANY tool
-        } catch (error) {
-          console.error(`Error in town speech response for ${this.name}:`, error);
-        } finally {
-          this.isCurrentlySpeaking = false;
-          // No need to reset isProcessingTownSpeech - let it naturally expire
-        }
-      }, Phaser.Math.Between(500, 1000));
+    // Check if we should respond to this speech
+    if (this.shouldEngageWithSpeech(data)) {
+      // Update event time to prevent timed actions
+      this.lastEventTime = Date.now();
+      
+      // Cancel any pending timed action since we have an event
+      if (this.actionTimer) {
+        console.log(`🚫 ${this.name}: Cancelling timed action due to speech event`);
+        this.actionTimer.destroy();
+        this.actionTimer = undefined;
+      }
+      
+      console.log(`🎯 ${this.name}: Triggering event-driven response to speech from ${data.speaker}: "${data.message}"`);
+      
+      // Trigger immediate event-driven response
+      this.performAIAction('speech_heard', { speaker: data.speaker, message: data.message })
+        .then(() => {
+          console.log(`✅ ${this.name}: Completed event response to speech`);
+        })
+        .catch((error) => {
+          console.error(`❌ ${this.name}: Error in speech event response:`, error);
+        });
+    } else {
+      console.log(`🚫 ${this.name}: Not responding to speech - shouldEngage returned false`);
     }
   };
 
@@ -808,14 +852,15 @@ export class SmartNPC implements Character {
     speakerId: string;
     message: string;
   }): boolean {
-    // Don't respond if already in player conversation
-    if (this.isInPlayerConversation) return false;
-
     // Always respond to player messages (100% engagement)
     if (data.speakerId === 'player') {
       console.log(`🎯 ${this.name}: Will respond to player message: "${data.message}"`);
+      this.isInPlayerConversation = true; // Enter conversation mode
       return true;
     }
+
+    // Don't respond if already in player conversation
+    if (this.isInPlayerConversation) return false;
 
     // For NPC-to-NPC, use more selective filtering
     if (Math.random() > 0.33) return false;

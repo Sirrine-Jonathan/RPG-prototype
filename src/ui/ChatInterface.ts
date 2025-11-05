@@ -2,17 +2,11 @@ import { Scene } from 'phaser';
 import { SmartNPC } from '../entities/SmartNPC';
 import { AIService } from '../services/AIService';
 
-interface ConversationMessage {
-    sender: 'player' | 'npc';
-    message: string;
+interface TownMessage {
+    type: 'speech' | 'action';
+    speaker: string;
+    content: string;
     timestamp: number;
-}
-
-interface Conversation {
-    npcId: string;
-    npcName: string;
-    messages: ConversationMessage[];
-    lastMessageTime: number;
 }
 
 export class ChatInterface {
@@ -24,25 +18,21 @@ export class ChatInterface {
     private chatTab: HTMLButtonElement;
     private inventoryTab: HTMLButtonElement;
     private minimizeButton: HTMLButtonElement;
-    private conversationList: HTMLDivElement;
-    private inventoryArea: HTMLDivElement;
     private messageArea: HTMLDivElement;
+    private inventoryArea: HTMLDivElement;
     private inputArea: HTMLDivElement;
     private textarea: HTMLTextAreaElement;
     private sendButton: HTMLButtonElement;
-    private backButton: HTMLButtonElement;
     private aiService: AIService;
     
-    public conversations: Map<string, Conversation> = new Map();
-    public activeConversation: string | null = null;
-    private nearbyNPCs: Set<string> = new Set();
-    private currentView: 'list' | 'conversation' = 'list';
+    private townMessages: TownMessage[] = [];
     private activeTab: 'chat' | 'inventory' = 'chat';
     private isMinimized: boolean = false;
+    private nearbyNPCs: Set<string> = new Set();
 
     constructor(scene: Scene) {
         if (ChatInterface.instance) {
-            ChatInterface.instance.scene = scene; // Update scene reference
+            ChatInterface.instance.scene = scene;
             return ChatInterface.instance;
         }
         
@@ -50,6 +40,12 @@ export class ChatInterface {
         this.aiService = AIService.getInstance();
         this.createUI();
         this.setupEventListeners();
+        
+        // Listen for global town speech
+        this.scene.events.on('town-speech', this.onTownSpeech, this);
+        
+        // Listen for object interactions
+        this.scene.events.on('town-action', this.onTownAction, this);
         
         ChatInterface.instance = this;
     }
@@ -68,15 +64,17 @@ export class ChatInterface {
             position: fixed;
             bottom: 20px;
             right: 20px;
-            width: 350px;
-            height: 400px;
-            background: rgba(0, 0, 0, 0.9);
+            width: 380px;
+            height: 450px;
+            background: linear-gradient(145deg, rgba(0, 0, 0, 0.95), rgba(20, 20, 20, 0.95));
             border: 2px solid #555;
-            border-radius: 8px;
-            font-family: Arial, sans-serif;
+            border-radius: 12px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             z-index: 1000;
             display: flex;
             flex-direction: column;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
         `;
 
         // Header with tabs and minimize button
@@ -139,75 +137,58 @@ export class ChatInterface {
         this.header.appendChild(this.tabsContainer);
         this.header.appendChild(this.minimizeButton);
 
-        // Conversation list view
-        this.conversationList = document.createElement('div');
-        this.conversationList.style.cssText = `
-            flex: 1;
-            overflow-y: auto;
-            padding: 10px;
-        `;
-
-        // Message area (hidden initially)
+        // Message area - always visible for town chat
         this.messageArea = document.createElement('div');
         this.messageArea.style.cssText = `
             flex: 1;
             overflow-y: auto;
             padding: 10px;
-            display: none;
             background: rgba(20, 20, 20, 0.8);
         `;
 
-        // Input area (hidden initially)
+        // Input area - always visible
         this.inputArea = document.createElement('div');
         this.inputArea.style.cssText = `
             padding: 10px;
             border-top: 1px solid #555;
-            display: none;
         `;
-
-        // Back button
-        this.backButton = document.createElement('button');
-        this.backButton.style.cssText = `
-            margin-bottom: 10px;
-            padding: 5px 10px;
-            background: #666;
-            border: none;
-            border-radius: 4px;
-            color: white;
-            cursor: pointer;
-            display: none;
-        `;
-        this.backButton.textContent = '← Back to Conversations';
 
         // Textarea
         this.textarea = document.createElement('textarea');
         this.textarea.style.cssText = `
             width: 100%;
-            height: 60px;
-            background: #222;
-            border: 1px solid #555;
-            border-radius: 4px;
+            height: 70px;
+            background: linear-gradient(145deg, #1a1a1a, #2a2a2a);
+            border: 2px solid #444;
+            border-radius: 8px;
             color: white;
-            padding: 8px;
+            padding: 12px;
             resize: none;
             font-size: 14px;
+            font-family: inherit;
             box-sizing: border-box;
+            transition: border-color 0.3s ease, box-shadow 0.3s ease;
+            outline: none;
         `;
-        this.textarea.placeholder = 'Type your message...';
+        this.textarea.placeholder = 'Type your message to the town...';
 
         // Send button
         this.sendButton = document.createElement('button');
         this.sendButton.style.cssText = `
-            margin-top: 8px;
-            padding: 8px 16px;
-            background: #4a90e2;
+            margin-top: 12px;
+            padding: 12px 20px;
+            background: linear-gradient(135deg, #4a90e2, #357abd);
             border: none;
-            border-radius: 4px;
+            border-radius: 8px;
             color: white;
             cursor: pointer;
             font-size: 14px;
+            font-weight: bold;
+            font-family: inherit;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 12px rgba(74, 144, 226, 0.3);
         `;
-        this.sendButton.textContent = 'Send';
+        this.sendButton.textContent = 'Send Message';
 
         // Inventory area
         this.inventoryArea = document.createElement('div');
@@ -223,15 +204,32 @@ export class ChatInterface {
         this.inputArea.appendChild(this.sendButton);
         
         this.container.appendChild(this.header);
-        this.container.appendChild(this.backButton);
-        this.container.appendChild(this.conversationList);
         this.container.appendChild(this.messageArea);
         this.container.appendChild(this.inventoryArea);
         this.container.appendChild(this.inputArea);
         
         document.body.appendChild(this.container);
         
-        this.updateConversationList();
+        // Add CSS animations
+        if (!document.getElementById('chat-animations')) {
+            const style = document.createElement('style');
+            style.id = 'chat-animations';
+            style.textContent = `
+                @keyframes slideIn {
+                    from {
+                        opacity: 0;
+                        transform: translateY(10px);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: translateY(0);
+                    }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+        
+        this.updateTownChat();
         this.updateInventoryArea();
     }
 
@@ -247,7 +245,6 @@ export class ChatInterface {
                 e.stopPropagation();
             }
         });
-        this.backButton.addEventListener('click', () => this.showConversationList());
         
         // Minimize/maximize functionality
         this.minimizeButton.addEventListener('click', (e) => {
@@ -267,6 +264,8 @@ export class ChatInterface {
         
         // Also prevent space key capture on focus
         this.textarea.addEventListener('focus', () => {
+            this.textarea.style.borderColor = '#4a90e2';
+            this.textarea.style.boxShadow = '0 0 0 3px rgba(74, 144, 226, 0.2)';
             // Disable Phaser keyboard input while typing
             if (this.scene.input.keyboard) {
                 this.scene.input.keyboard.enabled = false;
@@ -274,51 +273,175 @@ export class ChatInterface {
         });
         
         this.textarea.addEventListener('blur', () => {
+            this.textarea.style.borderColor = '#444';
+            this.textarea.style.boxShadow = 'none';
             // Re-enable Phaser keyboard input when done typing
             if (this.scene.input.keyboard) {
                 this.scene.input.keyboard.enabled = true;
             }
         });
+
+        // Send button hover effects
+        this.sendButton.addEventListener('mouseenter', () => {
+            this.sendButton.style.transform = 'translateY(-2px)';
+            this.sendButton.style.boxShadow = '0 6px 16px rgba(74, 144, 226, 0.4)';
+        });
+
+        this.sendButton.addEventListener('mouseleave', () => {
+            this.sendButton.style.transform = 'translateY(0)';
+            this.sendButton.style.boxShadow = '0 4px 12px rgba(74, 144, 226, 0.3)';
+        });
     }
 
     private async sendMessage() {
         const message = this.textarea.value.trim();
-        if (!message || !this.activeConversation) return;
+        if (!message) return;
 
-        const conversation = this.conversations.get(this.activeConversation);
-        if (!conversation) return;
-
-        // Add player message
-        conversation.messages.push({
-            sender: 'player',
-            message: message,
+        // Add to town chat
+        this.townMessages.push({
+            type: 'speech',
+            speaker: 'Player',
+            content: message,
             timestamp: Date.now()
         });
-        conversation.lastMessageTime = Date.now();
 
+        console.log(`📨 CONVO Player speaks: "${message}"`);
+        
         // Show player speech bubble
         this.showPlayerSpeechBubble(message);
 
-        // Find the NPC and send message
-        const npc = this.findNPCById(this.activeConversation);
-        if (npc) {
-            const playerCharacter = {
-                id: 'player',
-                name: 'Player',
-                getPosition: () => ({ x: 0, y: 0 })
-            };
-            
-            console.log(`📤 Sending message to ${npc.name}: "${message}"`);
-            
-            // Let the NPC handle the conversation - it will generate its own response
-            npc.receiveConversationAttempt(playerCharacter);
-            npc.sendMessage(message, playerCharacter);
-        } else {
-            console.error(`❌ Could not find NPC with id: ${this.activeConversation}`);
-        }
+        // Get player position from current scene
+        const playerPos = this.getPlayerPosition();
+        
+        // Emit global town speech event
+        this.scene.events.emit('town-speech', {
+            speaker: "Player",
+            speakerId: "player", 
+            message: message,
+            position: playerPos,
+            timestamp: Date.now()
+        });
 
         this.textarea.value = '';
-        this.updateMessageArea();
+        this.updateTownChat();
+    }
+
+    private onTownAction = (data: { actor: string; action: string; timestamp: number }) => {
+        this.townMessages.push({
+            type: 'action',
+            speaker: data.actor,
+            content: data.action,
+            timestamp: data.timestamp
+        });
+        
+        this.updateTownChat();
+    };
+
+    private onTownSpeech = (data: { speaker: string; speakerId: string; message: string; position: { x: number; y: number }; timestamp: number }) => {
+        // Don't add player messages twice
+        if (data.speakerId === 'player') return;
+        
+        this.townMessages.push({
+            type: 'speech',
+            speaker: data.speaker,
+            content: data.message,
+            timestamp: data.timestamp
+        });
+        
+        this.updateTownChat();
+    };
+
+    private updateTownChat() {
+        this.messageArea.innerHTML = '<h4 style="color: white; margin: 0 0 15px 0; text-align: center; border-bottom: 1px solid #555; padding-bottom: 8px;">Town Chat</h4>';
+
+        if (this.townMessages.length === 0) {
+            const noMessages = document.createElement('p');
+            noMessages.style.cssText = 'color: #888; font-style: italic; text-align: center; margin-top: 50px;';
+            noMessages.textContent = 'No messages yet. Start speaking to the town!';
+            this.messageArea.appendChild(noMessages);
+            return;
+        }
+
+        // Show only last 50 messages for performance
+        const recentMessages = this.townMessages.slice(-50);
+
+        recentMessages.forEach((msg, index) => {
+            const messageDiv = document.createElement('div');
+            const isPlayer = msg.speaker === 'Player';
+            
+            messageDiv.style.cssText = `
+                margin-bottom: 12px;
+                padding: 8px 12px;
+                border-radius: 12px;
+                max-width: 85%;
+                position: relative;
+                ${isPlayer ? 
+                    'background: linear-gradient(135deg, #4a90e2, #357abd); color: white; margin-left: auto; box-shadow: 0 2px 8px rgba(74, 144, 226, 0.3);' : 
+                    msg.type === 'action' ?
+                    'background: #2a2a2a; color: #ccc; font-style: italic; margin: 8px auto; text-align: center; border-left: 3px solid #666;' :
+                    'background: linear-gradient(135deg, #333, #444); color: white; margin-right: auto; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);'
+                }
+                animation: slideIn 0.3s ease-out;
+            `;
+
+            if (msg.type === 'action') {
+                messageDiv.textContent = `${msg.content}`;
+            } else {
+                // Speaker name
+                const speakerDiv = document.createElement('div');
+                speakerDiv.style.cssText = `
+                    font-size: 11px; 
+                    opacity: 0.8; 
+                    margin-bottom: 4px; 
+                    font-weight: bold;
+                    ${isPlayer ? 'text-align: right;' : 'text-align: left;'}
+                `;
+                speakerDiv.textContent = isPlayer ? 'You' : msg.speaker;
+
+                // Message content
+                const contentDiv = document.createElement('div');
+                contentDiv.style.cssText = 'line-height: 1.4; word-wrap: break-word;';
+                contentDiv.textContent = msg.content;
+
+                // Timestamp
+                const timeDiv = document.createElement('div');
+                timeDiv.style.cssText = `
+                    font-size: 10px; 
+                    opacity: 0.6; 
+                    margin-top: 4px;
+                    ${isPlayer ? 'text-align: right;' : 'text-align: left;'}
+                `;
+                const time = new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                timeDiv.textContent = time;
+
+                messageDiv.appendChild(speakerDiv);
+                messageDiv.appendChild(contentDiv);
+                messageDiv.appendChild(timeDiv);
+            }
+
+            this.messageArea.appendChild(messageDiv);
+        });
+
+        // Scroll to bottom smoothly
+        this.messageArea.scrollTo({
+            top: this.messageArea.scrollHeight,
+            behavior: 'smooth'
+        });
+    }
+
+    private getPlayerPosition(): { x: number; y: number } {
+        // Find the player in the current scene
+        const sceneManager = this.scene.scene.manager;
+        const activeSceneKey = sceneManager.getScenes(true)[0]?.scene?.key;
+        const currentScene = activeSceneKey ? sceneManager.getScene(activeSceneKey) : this.scene;
+        
+        if (currentScene && (currentScene as any).player) {
+            const player = (currentScene as any).player;
+            return { x: player.x, y: player.y };
+        }
+        
+        // Fallback position
+        return { x: 400, y: 300 };
     }
 
     private showPlayerSpeechBubble(message: string) {
@@ -372,7 +495,17 @@ export class ChatInterface {
                 npcs = [(currentScene as any).npc as SmartNPC];
                 console.log(`📋 Found single NPC via .npc property:`, npcs.map(npc => `${npc.name} (id: "${npc.id}")`));
             } else {
-                console.log(`📋 No NPCs found in scene properties. Available properties:`, Object.keys(currentScene).filter(key => key.includes('npc') || key.includes('NPC')));
+                // Look for any SmartNPC properties in the scene
+                const sceneProps = Object.keys(currentScene);
+                console.log(`📋 Checking scene properties:`, sceneProps.filter(key => key.includes('npc') || key.includes('NPC') || key.toLowerCase().includes('sheriff') || key.toLowerCase().includes('townsperson')));
+                
+                for (const prop of sceneProps) {
+                    const value = (currentScene as any)[prop];
+                    if (value && typeof value === 'object' && value.constructor?.name === 'SmartNPC') {
+                        npcs.push(value as SmartNPC);
+                        console.log(`📋 Found NPC via property "${prop}":`, value.name, `(id: "${value.id}")`);
+                    }
+                }
             }
             
             if (npcs.length > 0) {
@@ -422,166 +555,11 @@ export class ChatInterface {
         this.nearbyNPCs.clear();
         npcs.forEach(npc => {
             this.nearbyNPCs.add(npc.id);
-            
-            // Create conversation if it doesn't exist
-            if (!this.conversations.has(npc.id)) {
-                console.log(`Creating new conversation for: ${npc.name} with ID: ${npc.id}`);
-                this.conversations.set(npc.id, {
-                    npcId: npc.id,
-                    npcName: npc.name,
-                    messages: [],
-                    lastMessageTime: 0
-                });
-            }
         });
-        
-        this.updateConversationList();
     }
 
     private setsEqual(a: Set<string>, b: Set<string>): boolean {
         return a.size === b.size && [...a].every(x => b.has(x));
-    }
-
-    public updateConversationList() {
-        console.log('Updating conversation list. Total conversations:', this.conversations.size);
-        this.conversationList.innerHTML = '<h3 style="color: white; margin: 0 0 15px 0;">Conversations</h3>';
-        
-        if (this.conversations.size === 0) {
-            const noConversations = document.createElement('p');
-            noConversations.style.cssText = 'color: #888; font-style: italic;';
-            noConversations.textContent = 'No conversations yet. Get close to NPCs to start chatting.';
-            this.conversationList.appendChild(noConversations);
-            return;
-        }
-
-        // Sort conversations by last message time
-        const sortedConversations = Array.from(this.conversations.values())
-            .sort((a, b) => b.lastMessageTime - a.lastMessageTime);
-
-        console.log('Sorted conversations:', sortedConversations.map(c => c.npcName));
-
-        sortedConversations.forEach(conversation => {
-            const conversationDiv = document.createElement('div');
-            const isNearby = this.nearbyNPCs.has(conversation.npcId);
-            const hasMessages = conversation.messages.length > 0;
-            
-            console.log(`Creating UI for ${conversation.npcName}, nearby: ${isNearby}`);
-            
-            conversationDiv.style.cssText = `
-                padding: 10px;
-                margin-bottom: 8px;
-                background: ${isNearby ? 'rgba(74, 144, 226, 0.2)' : 'rgba(100, 100, 100, 0.2)'};
-                border: 1px solid ${isNearby ? '#4a90e2' : '#666'};
-                border-radius: 4px;
-                cursor: pointer;
-                color: ${isNearby ? 'white' : '#888'};
-            `;
-
-            const nameDiv = document.createElement('div');
-            nameDiv.style.cssText = 'font-weight: bold; margin-bottom: 4px;';
-            nameDiv.textContent = conversation.npcName;
-
-            const statusDiv = document.createElement('div');
-            statusDiv.style.cssText = 'font-size: 12px;';
-            statusDiv.textContent = isNearby ? 'Nearby - Click to chat' : 
-                hasMessages ? 'Not nearby - View only' : 'No messages yet';
-
-            if (hasMessages) {
-                const lastMessage = conversation.messages[conversation.messages.length - 1];
-                const previewDiv = document.createElement('div');
-                previewDiv.style.cssText = 'font-size: 11px; color: #bbb; margin-top: 4px;';
-                previewDiv.textContent = `${lastMessage.sender === 'player' ? 'You' : conversation.npcName}: ${lastMessage.message.substring(0, 50)}${lastMessage.message.length > 50 ? '...' : ''}`;
-                conversationDiv.appendChild(previewDiv);
-            }
-
-            conversationDiv.appendChild(nameDiv);
-            conversationDiv.appendChild(statusDiv);
-
-            conversationDiv.addEventListener('click', (e) => {
-                console.log('Clicked conversation:', conversation.npcId, e);
-                e.preventDefault();
-                e.stopPropagation();
-                this.openConversation(conversation.npcId);
-            });
-
-            this.conversationList.appendChild(conversationDiv);
-        });
-    }
-
-    private openConversation(npcId: string) {
-        console.log('Opening conversation with:', npcId);
-        console.log('Available conversations:', Array.from(this.conversations.keys()));
-        this.activeConversation = npcId;
-        this.currentView = 'conversation';
-        this.showConversationView();
-        this.updateMessageArea();
-        
-        // Auto-focus the input if NPC is nearby
-        if (this.nearbyNPCs.has(npcId)) {
-            setTimeout(() => this.textarea.focus(), 100);
-        }
-    }
-
-    private showConversationView() {
-        console.log('Showing conversation view for:', this.activeConversation);
-        this.conversationList.style.display = 'none';
-        this.messageArea.style.display = 'flex';
-        this.messageArea.style.flexDirection = 'column';
-        this.inputArea.style.display = this.nearbyNPCs.has(this.activeConversation!) ? 'block' : 'none';
-        this.backButton.style.display = 'block';
-    }
-
-    private showConversationList() {
-        this.activeConversation = null;
-        this.currentView = 'list';
-        this.conversationList.style.display = 'block';
-        this.messageArea.style.display = 'none';
-        this.inputArea.style.display = 'none';
-        this.backButton.style.display = 'none';
-    }
-
-    public updateMessageArea() {
-        if (!this.activeConversation) return;
-
-        const conversation = this.conversations.get(this.activeConversation);
-        if (!conversation) return;
-
-        this.messageArea.innerHTML = `<h4 style="color: white; margin: 0 0 15px 0;">${conversation.npcName}</h4>`;
-
-        if (conversation.messages.length === 0) {
-            const noMessages = document.createElement('p');
-            noMessages.style.cssText = 'color: #888; font-style: italic;';
-            noMessages.textContent = 'No messages yet. Start the conversation!';
-            this.messageArea.appendChild(noMessages);
-            return;
-        }
-
-        conversation.messages.forEach(msg => {
-            const messageDiv = document.createElement('div');
-            messageDiv.style.cssText = `
-                margin-bottom: 10px;
-                padding: 8px;
-                border-radius: 8px;
-                max-width: 80%;
-                ${msg.sender === 'player' ? 
-                    'background: #4a90e2; color: white; margin-left: auto; text-align: right;' : 
-                    'background: #333; color: white; margin-right: auto;'}
-            `;
-
-            const senderDiv = document.createElement('div');
-            senderDiv.style.cssText = 'font-size: 11px; opacity: 0.7; margin-bottom: 4px;';
-            senderDiv.textContent = msg.sender === 'player' ? 'You' : conversation.npcName;
-
-            const textDiv = document.createElement('div');
-            textDiv.textContent = msg.message;
-
-            messageDiv.appendChild(senderDiv);
-            messageDiv.appendChild(textDiv);
-            this.messageArea.appendChild(messageDiv);
-        });
-
-        // Scroll to bottom
-        this.messageArea.scrollTop = this.messageArea.scrollHeight;
     }
 
     private toggleMinimize() {
@@ -589,15 +567,12 @@ export class ChatInterface {
         
         if (this.isMinimized) {
             this.container.style.height = '40px';
-            this.conversationList.style.display = 'none';
             this.messageArea.style.display = 'none';
-            this.inventoryArea.style.display = 'none'; // Hide inventory too
+            this.inventoryArea.style.display = 'none';
             this.inputArea.style.display = 'none';
-            this.backButton.style.display = 'none';
             this.minimizeButton.textContent = '+';
         } else {
-            this.container.style.height = '400px';
-            // Restore the correct view based on active tab
+            this.container.style.height = '450px';
             this.switchTab(this.activeTab);
             this.minimizeButton.textContent = '−';
         }
@@ -612,28 +587,17 @@ export class ChatInterface {
             this.inventoryTab.style.background = '#666';
             
             // Show chat UI
-            if (this.currentView === 'list') {
-                this.conversationList.style.display = 'block';
-                this.messageArea.style.display = 'none';
-                this.inputArea.style.display = 'none';
-                this.backButton.style.display = 'none';
-            } else {
-                this.conversationList.style.display = 'none';
-                this.messageArea.style.display = 'flex';
-                this.messageArea.style.flexDirection = 'column';
-                this.inputArea.style.display = this.nearbyNPCs.has(this.activeConversation!) ? 'block' : 'none';
-                this.backButton.style.display = 'block';
-            }
+            this.messageArea.style.display = 'flex';
+            this.messageArea.style.flexDirection = 'column';
+            this.inputArea.style.display = 'block';
             this.inventoryArea.style.display = 'none';
         } else {
             this.inventoryTab.style.background = '#4a90e2';
             this.chatTab.style.background = '#666';
             
             // Show inventory UI
-            this.conversationList.style.display = 'none';
             this.messageArea.style.display = 'none';
             this.inputArea.style.display = 'none';
-            this.backButton.style.display = 'none';
             this.inventoryArea.style.display = 'block';
         }
     }

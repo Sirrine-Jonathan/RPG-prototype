@@ -1,5 +1,6 @@
 import { Game, AUTO } from 'phaser';
 import { MainMenuScene } from './src/scenes/MainMenuScene';
+import { TownOverworldScene } from './src/scenes/TownOverworldScene';
 import { TechStationScene } from './src/scenes/TechStationScene';
 import { SecurityStationScene } from './src/scenes/SecurityStationScene';
 import { ResearchLabScene } from './src/scenes/ResearchLabScene';
@@ -22,6 +23,7 @@ const config = {
     },
     scene: [
         MainMenuScene, 
+        TownOverworldScene,
         TechStationScene, 
         SecurityStationScene, 
         ResearchLabScene, 

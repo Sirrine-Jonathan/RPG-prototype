@@ -63,6 +63,12 @@ export abstract class InteractiveObject {
         
         if (eventName) {
             const toolName = eventName.replace(`_${this.id}`, '');
+            
+            // Show visual indicator that NPC is interacting
+            if (data.initiator && data.initiator.name) {
+                this.showActionBubble(`${data.initiator.name} is using ${toolName.replace('_', ' ')}`);
+            }
+            
             const result = this.handleInteraction(toolName, data.parameters);
             
             // Emit response back to initiator
@@ -73,6 +79,27 @@ export abstract class InteractiveObject {
             });
         }
     };
+
+    private showActionBubble(text: string): void {
+        const bubble = this.scene.add.text(
+            this.sprite.x, 
+            this.sprite.y - 50, 
+            text, 
+            {
+                fontSize: '10px',
+                color: '#000000',
+                backgroundColor: '#ffff88',
+                padding: { x: 4, y: 2 }
+            }
+        ).setOrigin(0.5);
+
+        // Auto-hide after 2 seconds
+        this.scene.time.delayedCall(2000, () => {
+            if (bubble) {
+                bubble.destroy();
+            }
+        });
+    }
 
     // Get current state description for NPC context
     getStateDescription(): string {

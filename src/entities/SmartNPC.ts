@@ -3,11 +3,8 @@ import { AIService, NPCContext, NPCTool } from "../services/AIService";
 import { InteractiveObject } from "./InteractiveObject";
 import { SpeechBubble } from "../ui/SpeechBubble";
 
-const ENGAGEMENT_TIMEOUT = 60000; // 60 seconds (increased from 30s)
-const ACTION_DELAY = 1000; // 5 seconds between actions
+const ACTION_DELAY = 5000; // 5 seconds between actions
 const LINE_OF_SIGHT_RANGE = 150;
-
-export type NPCState = "IDLE" | "ENGAGED" | "APPROACHING";
 
 export interface Character {
   id: string;
@@ -24,62 +21,62 @@ export class SmartNPC implements Character {
   public personality: string;
   public background: string;
 
-  private state: NPCState = "IDLE";
   private aiService: AIService;
   private actionTimer?: Phaser.Time.TimerEvent;
-  private conversationTimeoutTimer?: Phaser.Time.TimerEvent;
   private speechBubble: SpeechBubble;
-  private conversationPartner?: SmartNPC;
+  private isInPlayerConversation: boolean = false;
+  private isCurrentlySpeaking: boolean = false;
 
-  // Visual enhancements
-  private glowEffect?: Phaser.GameObjects.Graphics;
-  private shadowSprite?: Phaser.GameObjects.Image;
-  private breathingTween?: Phaser.Tweens.Tween;
+  // LLM request tracking
+  private lastLLMRequest: number = 0;
+  private llmRequestCount: number = 0;
+  private activityTimer?: Phaser.Time.TimerEvent;
 
   // Discovery and awareness
   private discoveredObjects: Set<string> = new Set();
   private discoveredCharacters: Set<string> = new Set();
-  private conversationHistory: any[] = [];
   private conversationMessages: Array<{
     role: string;
     content?: string;
     tool_calls?: any;
     name?: string;
   }> = [];
-  private lastDirection = "down"; // Track last movement direction
+  private lastDirection = "down";
 
   // Room context
   private roomObjects: InteractiveObject[] = [];
   private roomCharacters: Character[] = [];
-  private roomGrid: number[][] = []; // Will be populated by room system
+  private roomGrid: number[][] = [];
 
   constructor(
     scene: Scene,
     x: number,
     y: number,
-    spriteKey: string, // Changed from id to spriteKey
+    spriteKey: string,
     name: string,
     personality: string,
     background: string,
     role: string = "civilian"
   ) {
     this.scene = scene;
-    this.id = spriteKey; // Use spriteKey as id for now
+    this.id = `${spriteKey}_${Date.now()}_${Math.random()
+      .toString(36)
+      .substr(2, 9)}`; // Unique ID
     this.name = name;
     this.personality = personality;
     this.background = background;
     this.aiService = AIService.getInstance();
     this.speechBubble = new SpeechBubble(scene);
 
-    // Listen for speech events directed at this NPC
-    this.scene.events.on(`npc-speech-${this.id}`, this.onReceiveSpeech, this);
+    // Listen for global town speech events
+    this.scene.events.on("town-speech", this.onTownSpeech, this);
 
-    // Create sprite using the provided sprite key
+    // Create sprite
     this.sprite = scene.add.sprite(x, y, spriteKey, 0);
-    this.sprite.setScale(2); // Scale up the 16x16 sprites to match player
+    this.sprite.setScale(2);
     this.sprite.setInteractive();
 
-    // Play idle animation based on sprite key
+    // Play idle animation
     if (spriteKey === "alex") {
       this.sprite.play("alex_idle_down");
     } else if (spriteKey === "amelia") {
@@ -87,11 +84,10 @@ export class SmartNPC implements Character {
     } else if (spriteKey === "bob") {
       this.sprite.play("bob_idle_down");
     } else {
-      // Fallback for old sprites
       this.sprite.setFrame(0);
     }
 
-    // Create name text with better styling
+    // Create name text
     this.nameText = scene.add
       .text(x, y - 35, name, {
         fontSize: "11px",
@@ -104,125 +100,84 @@ export class SmartNPC implements Character {
       .setOrigin(0.5)
       .setAlpha(0.9);
 
-    // Add subtle glow effect
-    this.createGlowEffect(x, y);
+    this.startAILoop();
 
-    this.startIdleState();
-  }
-
-  private createGlowEffect(x: number, y: number): void {
-    this.glowEffect = this.scene.add.graphics();
-    this.glowEffect.setPosition(x, y);
-    this.glowEffect.setDepth(-1);
-
-    // Create subtle ambient glow
-    this.scene.tweens.add({
-      targets: this.glowEffect,
-      alpha: { from: 0.1, to: 0.3 },
-      duration: 3000,
-      yoyo: true,
-      repeat: -1,
-      ease: "Sine.easeInOut",
+    // Start activity monitoring
+    this.activityTimer = this.scene.time.addEvent({
+      delay: 30000, // Every 30 seconds
+      callback: this.logActivity,
+      callbackScope: this,
+      loop: true,
     });
   }
 
-  // State management
-  private startIdleState(): void {
-    this.state = "IDLE";
-    this.sprite.setTint(0xffffff); // Reset tint for idle
-    this.updateGlowColor(0x4488ff, 0.2); // Soft blue glow for idle
-    console.log(`🔵 ${this.name}: Entering IDLE state`);
+  private logActivity(): void {
+    const avgRequestInterval =
+      this.llmRequestCount > 1
+        ? (Date.now() -
+            (this.lastLLMRequest - (this.llmRequestCount - 1) * 1000)) /
+          this.llmRequestCount
+        : 0;
 
-    // Start continuous AI conversation loop
-    this.startAIConversationLoop();
+    console.log(
+      `📊 ${this.name}: Activity Summary - ${
+        this.llmRequestCount
+      } LLM requests, avg interval: ${Math.round(
+        avgRequestInterval
+      )}ms, in conversation: ${this.isInPlayerConversation}`
+    );
   }
 
-  private startAIConversationLoop(): void {
-    if (this.state !== "IDLE") return;
-
-    console.log(`🧠 ${this.name}: Starting AI conversation loop`);
-    this.performAIAction();
+  private startAILoop(): void {
+    console.log(`🧠 ${this.name}: Starting AI loop`);
+    // Stagger NPC startup to prevent simultaneous LLM requests
+    const delay = Math.random() * 3000; // 0-3 second random delay
+    setTimeout(() => {
+      this.performAIAction();
+    }, delay);
   }
-
-  private startEngagedState(engager: Character): void {
-    this.state = "ENGAGED";
-    this.sprite.setTint(0x88ff88); // Green tint when engaged
-    this.updateGlowColor(0x44ff44, 0.4); // Brighter green glow when engaged
-    console.log(`🟢 ${this.name}: Entering ENGAGED state with ${engager.name}`);
-
-    // Clear action timer
-    if (this.actionTimer) {
-      this.actionTimer.destroy();
-      this.actionTimer = undefined;
-    }
-
-    // No more automatic action timers - conversations are now event-driven
-  }
-
-  private handleIgnoredConversation(engager: Character): void {
-    if (engager.id === "player") {
-      // Show a reaction to being ignored
-      const ignoredResponses = [
-        "Well, I guess you're busy...",
-        "Maybe we can talk later.",
-        "I'll let you get back to what you were doing.",
-        "No worries, catch you around.",
-      ];
-      const response = Phaser.Utils.Array.GetRandom(ignoredResponses);
-      console.log(`😔 ${this.name}: Reacting to being ignored: "${response}"`);
-      this.showSpeech(response); // Always auto-hide
-    }
-
-    this.endEngagement();
-  }
-
-  private endEngagement(): void {
-    console.log(`🔴 ${this.name}: Ending engagement, returning to IDLE`);
-
-    // Clear conversation partner and timers
-    this.conversationPartner = undefined;
-
-    if (this.conversationTimeoutTimer) {
-      this.conversationTimeoutTimer.destroy();
-      this.conversationTimeoutTimer = undefined;
-    }
-
-    this.startIdleState();
-  }
-
-  // Remove the entire performEngagedAction method and isStillNearConversationPartner method
 
   private async performAIAction(): Promise<void> {
-    if (this.state !== "IDLE") {
-      console.log(`⏸️ ${this.name}: Skipping action - currently ${this.state}`);
+    // Skip AI actions if in player conversation
+    if (this.isInPlayerConversation) {
+      console.log(`⏸️ ${this.name}: Skipping AI action - in player conversation`);
       return;
     }
 
-    // Update line of sight and get fresh context
+    // Update line of sight and check proximity
     this.updateLineOfSight();
+
+    // Check if player moved away during conversation
+    if (this.isInPlayerConversation && !this.isPlayerNearby()) {
+      console.log(`🚶 ${this.name}: Player moved away, ending conversation`);
+      this.isInPlayerConversation = false;
+    }
+
     const context = this.buildAIContext();
 
     try {
+      // Track LLM request frequency
+      const now = Date.now();
+      const timeSinceLastRequest = now - this.lastLLMRequest;
+      this.lastLLMRequest = now;
+      this.llmRequestCount++;
+
+      console.log(
+        `🕐 ${this.name}: LLM Request #${this.llmRequestCount} (${timeSinceLastRequest}ms since last request)`
+      );
+
       const decision = await this.aiService.generateNPCAction(
         context,
         this.conversationMessages
       );
 
-      // Debug the decision to catch undefined actions
-      console.log(
-        `🤖 ${this.name}: LLM Decision:`,
-        JSON.stringify({
-          action: decision.action,
-          parameters: decision.parameters,
-          reasoning: decision.reasoning,
-        })
-      );
+      console.log(`🤖 ${this.name}: LLM Decision:`, {
+        action: decision.action,
+        parameters: decision.parameters,
+        reasoning: decision.reasoning,
+      });
 
       if (!decision.action) {
-        console.error(
-          `❌ ${this.name}: LLM returned undefined action!`,
-          decision
-        );
         throw new Error("LLM returned undefined action");
       }
 
@@ -237,7 +192,7 @@ export class SmartNPC implements Character {
         }`
       );
 
-      // Add LLM response to conversation
+      // Add to conversation history
       this.conversationMessages.push({
         role: "assistant",
         content: `I chose action: ${decision.action}${
@@ -248,7 +203,6 @@ export class SmartNPC implements Character {
         tool_calls: decision.tool_calls,
       });
 
-      // Add tool result to conversation
       this.conversationMessages.push({
         role: "tool",
         content: result.success
@@ -262,38 +216,24 @@ export class SmartNPC implements Character {
         this.conversationMessages = this.conversationMessages.slice(-10);
       }
 
-      // Continue conversation immediately with realistic delay
+      // Continue AI loop
       setTimeout(() => {
-        if (this.state === "IDLE") {
+        if (!this.isInPlayerConversation) {
           this.performAIAction();
         }
       }, ACTION_DELAY);
     } catch (error) {
       console.error(`AI action failed for ${this.name}:`, error);
-
-      // Add error to conversation
-      this.conversationMessages.push({
-        role: "tool",
-        content: `ERROR: ${error}`,
-        name: "system_error",
-      });
-
-      // Continue even after error
       setTimeout(() => {
-        if (this.state === "IDLE") {
+        if (!this.isInPlayerConversation) {
           this.performAIAction();
         }
       }, ACTION_DELAY);
     }
   }
 
-  // Line of sight and discovery - always refresh, no caching
   private updateLineOfSight(): void {
     const myPos = this.getPosition();
-
-    // Clear and rebuild discovery sets to ensure fresh proximity
-    const previousObjects = new Set(this.discoveredObjects);
-    const previousCharacters = new Set(this.discoveredCharacters);
     this.discoveredObjects.clear();
     this.discoveredCharacters.clear();
 
@@ -305,17 +245,8 @@ export class SmartNPC implements Character {
         obj.getPosition().x,
         obj.getPosition().y
       );
-
       if (distance < LINE_OF_SIGHT_RANGE) {
         this.discoveredObjects.add(obj.id);
-        if (!previousObjects.has(obj.id)) {
-          console.log(
-            `🔍 ${this.name}: Discovered object ${obj.name} (${obj.id}) - can now interact with it`
-          );
-          if (typeof obj.onDiscovered === "function") {
-            obj.onDiscovered();
-          }
-        }
       }
     });
 
@@ -328,22 +259,13 @@ export class SmartNPC implements Character {
           char.getPosition().x,
           char.getPosition().y
         );
-
         if (distance < LINE_OF_SIGHT_RANGE * 1.5) {
           this.discoveredCharacters.add(char.id);
-          if (!previousCharacters.has(char.id)) {
-            console.log(
-              `👥 ${this.name}: Discovered ${char.name} (distance: ${Math.round(
-                distance
-              )}px)`
-            );
-          }
         }
       }
     });
   }
 
-  // AI context building
   private buildAIContext(): NPCContext {
     const visibleObjects = Array.from(this.discoveredObjects)
       .map((id) => this.roomObjects.find((obj) => obj.id === id))
@@ -356,67 +278,97 @@ export class SmartNPC implements Character {
       .map((char) => char!.name);
 
     const availableTools = this.getAvailableTools();
+    const contextHistory = this.conversationMessages.slice(-5);
 
-    // Add conversation context when ENGAGED
-    let conversationContext = "";
-    if (this.state === "ENGAGED" && this.conversationPartner) {
-      conversationContext = `Currently in conversation with ${this.conversationPartner.name}. `;
-    }
-
-    console.log(
-      `🧠 ${this.name} AI Context:`,
-      JSON.stringify(
-        {
-          visibleCharacters:
-            visibleCharacters.length > 0 ? visibleCharacters : "none",
-          availableTools: availableTools.map((t) => ({
-            name: t.name,
-            desc: t.description.substring(0, 50) + "...",
-            params: t.parameters,
-          })),
-          conversationLength: this.conversationMessages.length,
-          state: this.state,
-        },
-        null,
-        2
-      )
-    );
+    // Add specific goals and motivations based on character
+    const goals = this.getCharacterGoals();
 
     return {
       name: this.name,
-      background:
-        this.background +
-        (conversationContext ? ` ${conversationContext}` : ""),
+      background: this.background,
       personality: this.personality,
       currentLocation: "current room",
       visibleObjects,
       visibleCharacters,
       availableTools,
-      conversationHistory: this.conversationHistory.slice(-5),
+      conversationHistory: contextHistory,
+      currentGoals: goals,
     };
+  }
+
+  private getCharacterGoals(): string[] {
+    const name = this.name.toLowerCase();
+    
+    if (name.includes('doctor') || name.includes('thompson')) {
+      return [
+        "Investigate the mysterious illness affecting townspeople",
+        "Gather symptoms and medical information from residents", 
+        "Find the source of the strange ailments",
+        "Document unusual patient behaviors and patterns"
+      ];
+    }
+    
+    if (name.includes('sheriff') || name.includes('martinez')) {
+      return [
+        "Maintain law and order in the town",
+        "Investigate reports of strange occurrences", 
+        "Question strangers and newcomers",
+        "Protect townspeople from potential threats",
+        "Gather information about the Whispering Stones incidents"
+      ];
+    }
+    
+    if (name.includes('sage') || name.includes('eleanor')) {
+      return [
+        "Research the ancient history of the Whispering Stones",
+        "Decode old texts and manuscripts about the town's past",
+        "Share knowledge with those who seek understanding",
+        "Uncover the truth behind the mystical events",
+        "Preserve important historical information"
+      ];
+    }
+    
+    if (name.includes('sarah')) {
+      return [
+        "Gather gossip and information from townspeople and visitors",
+        "Help newcomers feel welcome while protecting town secrets",
+        "Keep track of who's coming and going",
+        "Share local knowledge and rumors",
+        "Maintain her position as the town's information hub"
+      ];
+    }
+    
+    if (name.includes('marcus') || name.includes('webb')) {
+      return [
+        "Identify profitable business opportunities in town",
+        "Investigate the commercial potential of recent strange events",
+        "Build relationships with key townspeople",
+        "Gather information about valuable resources or artifacts",
+        "Establish trade connections and partnerships"
+      ];
+    }
+    
+    // Default goals for other NPCs
+    return [
+      "Interact with townspeople and visitors",
+      "Share information about local events",
+      "Maintain daily routines and responsibilities"
+    ];
   }
 
   private getAvailableTools(): NPCTool[] {
     const tools: NPCTool[] = [];
 
-    // When ENGAGED, only allow conversation tools
-    if (this.state === "ENGAGED") {
+    // When in player conversation, only allow conversation tools
+    if (this.isInPlayerConversation) {
       tools.push(
         { name: "speak", description: "Continue the conversation" },
-        {
-          name: "ignore_conversation",
-          description: "Ignore the speaker and end the conversation",
-        },
-        {
-          name: "leave_conversation",
-          description:
-            "Politely end the conversation and return to normal activities",
-        }
+        { name: "leave_conversation", description: "End the conversation" }
       );
       return tools;
     }
 
-    // Normal IDLE tools
+    // Normal tools
     tools.push(
       { name: "wait", description: "Do nothing and observe the surroundings" },
       {
@@ -437,63 +389,60 @@ export class SmartNPC implements Character {
       }
     );
 
-    // Only add movement tools if player is not nearby
-    const playerNearby = this.isPlayerNearby();
-    if (!playerNearby) {
-      tools.push(
-        {
-          name: "move_random",
-          description: "Walk to a different area of the room",
-        },
-        {
-          name: "patrol",
-          description: "Move around the room to patrol the area",
-        }
-      );
-    }
+    // Always add movement tools (removed player proximity restriction)
+    tools.push(
+      {
+        name: "move_random",
+        description: "Walk to a different area of the room",
+      },
+      { name: "patrol", description: "Move around the room to patrol the area" }
+    );
 
+    // Add interaction tools for discovered objects
     console.log(
       `🔍 ${this.name}: Discovered objects:`,
       Array.from(this.discoveredObjects)
     );
-    console.log(
-      `🔍 ${this.name}: Discovered characters:`,
-      Array.from(this.discoveredCharacters)
-    );
-
-    // Add interaction tools for discovered objects - let objects define their own tools
     Array.from(this.discoveredObjects).forEach((objId) => {
       const obj = this.roomObjects.find((o) => o.id === objId);
       if (obj && typeof obj.getOfferedTools === "function") {
         const objectTools = obj.getOfferedTools();
         objectTools.forEach((tool) => {
-          const dynamicTool = {
+          tools.push({
             name: `${tool.name}_${obj.id}`,
             description: `${tool.description} (${obj.name})`,
             parameters: { objectId: obj.id, ...tool.parameters },
-          };
-
-          if (
-            tool.name.includes("search") ||
-            tool.description.toLowerCase().includes("search")
-          ) {
-            tools.unshift(dynamicTool);
-          } else {
-            tools.push(dynamicTool);
-          }
+          });
         });
       }
     });
 
     // Add interaction tools for discovered characters
+    console.log(
+      `🔍 ${this.name}: Discovered characters:`,
+      Array.from(this.discoveredCharacters)
+    );
     Array.from(this.discoveredCharacters).forEach((charId) => {
       const character = this.roomCharacters.find((c) => c.id === charId);
       if (character && character.id !== this.id) {
-        tools.push({
-          name: `speak_to_${character.id}`,
-          description: `Start a conversation with ${character.name}`,
-          parameters: { characterId: character.id },
-        });
+        // Only add speak tools if not currently speaking
+        if (!this.isCurrentlySpeaking) {
+          // Add speak_to tool for player
+          if (character.id === "player") {
+            tools.push({
+              name: "speak_to_player",
+              description: `Start a conversation with the visitor`,
+              parameters: { characterId: "player" },
+            });
+          } else {
+            // Add speak_to tool for other NPCs
+            tools.push({
+              name: `speak_to_${character.id}`,
+              description: `Start a conversation with ${character.name}`,
+              parameters: { characterId: character.id },
+            });
+          }
+        }
 
         const distance = Phaser.Math.Distance.Between(
           this.getPosition().x,
@@ -502,7 +451,7 @@ export class SmartNPC implements Character {
           character.getPosition().y
         );
 
-        if (distance > 100) {
+        if (distance > 100 && character.id !== "player") {
           tools.push({
             name: `move_to_${character.id}`,
             description: `Move closer to ${character.name}`,
@@ -512,6 +461,10 @@ export class SmartNPC implements Character {
       }
     });
 
+    console.log(
+      `🔧 ${this.name}: Available tools:`,
+      tools.map((t) => t.name)
+    );
     return tools;
   }
 
@@ -526,10 +479,9 @@ export class SmartNPC implements Character {
       player.getPosition().y
     );
 
-    return distance < 80; // Same range as proximity service
+    return distance < 80;
   }
 
-  // Action execution - now returns results for LLM feedback
   private async executeAction(
     action: string,
     parameters?: any
@@ -545,7 +497,6 @@ export class SmartNPC implements Character {
 
     switch (action) {
       case "wait":
-        console.log(`⏸️ ${this.name}: Waiting and observing...`);
         return { success: true, message: "Observed surroundings" };
 
       case "move_north":
@@ -553,122 +504,60 @@ export class SmartNPC implements Character {
       case "move_east":
       case "move_west":
         const direction = action.split("_")[1];
-        console.log(`🧭 ${this.name}: Moving ${direction}`);
-        const moved = this.moveInDirection(direction);
-        return moved;
+        return this.moveInDirection(direction);
 
       case "move_random":
       case "patrol":
-        console.log(`🚶 ${this.name}: Moving randomly/patrolling`);
         this.moveRandomly();
         return { success: true, message: "Moved to new area" };
 
-      case "move_to_character":
-        // Prevent movement when ENGAGED - should use speak instead
-        if (this.state === "ENGAGED") {
-          console.log(
-            `❌ ${this.name}: Cannot move while ENGAGED - use 'speak' or 'leave_conversation' instead`
-          );
-          return;
-        }
-
-        const moveTarget =
-          parameters?.target ||
-          parameters?.character ||
-          parameters?.character_name ||
-          parameters?.character_id;
-        if (moveTarget) {
-          console.log(`🎯 ${this.name}: Moving toward ${moveTarget}`);
-          this.state = "APPROACHING"; // Set state to prevent distractions
-          this.sprite.setTint(0xffff88); // Yellow tint when approaching
-          this.moveToCharacter(moveTarget);
-        } else {
-          console.log(
-            `❌ ${this.name}: No target specified for move_to_character`
-          );
-        }
-        break;
-
-      case "speak_to":
-        // Only allow speak_to when IDLE, not when ENGAGED
-        if (this.state !== "IDLE") {
-          console.log(
-            `❌ ${this.name}: Cannot use speak_to while ${this.state} - use 'speak' instead`
-          );
-          return;
-        }
-
-        const target =
-          parameters?.target || parameters?.name || parameters?.character;
-        if (target) {
-          console.log(
-            `💬 ${this.name}: Initiating conversation with ${target}`
-          );
-          this.initiateConversation(target);
-        }
-        break;
-
-      case "speak":
-        console.log(`💬 ${this.name}: Speaking in conversation`);
-        await this.generateConversationMessage();
-        break;
-
       case "leave_conversation":
-        console.log(`🚪 ${this.name}: Leaving conversation`);
-        this.endEngagement();
-        break;
+        console.log(`🚪 ${this.name}: Ending player conversation`);
+        this.isInPlayerConversation = false;
+        return { success: true, message: "Ended conversation" };
 
-      case "ignore_conversation":
-        console.log(`🙄 ${this.name}: Ignoring conversation`);
-        this.endEngagement();
-        break;
-
-      case "search":
-        const objectId = parameters?.target || parameters?.object;
-        if (objectId) {
-          const obj = this.roomObjects.find((o) => o.id === objectId);
-          if (obj) {
-            console.log(
-              `🔍 ${this.name}: SEARCHING ${obj.name} for Energy Core`
-            );
-            const result = obj.handleInteraction("search", parameters);
-            console.log(`📝 ${this.name} -> ${obj.name}: ${result.message}`);
-
-            if (result.success) {
-              console.log(
-                `🎉 ${this.name}: MISSION COMPLETE! Found Energy Core in ${obj.name}!`
-              );
-            } else {
-              console.log(
-                `❌ ${this.name}: No Energy Core in ${obj.name}, continuing search`
-              );
-            }
-          } else {
-            console.log(
-              `❓ ${this.name}: Could not find object ${objectId} to search`
-            );
-          }
-        } else {
-          console.log(`❌ ${this.name}: No target specified for search`);
+      case "speak_to_player":
+        const player = this.roomCharacters.find((c) => c.id === "player");
+        if (player) {
+          console.log(`🗣️ ${this.name}: Speaking to player`);
+          await this.speakToTown(); // Let AI generate contextual response
+          return { success: true, message: "Started conversation with player" };
         }
-        break;
+        return { success: false, message: "Player not found" };
 
       default:
-        // Handle dynamic character and object actions using event system
+        // Handle dynamic character and object actions
         const actionParts = action.split("_");
         if (actionParts.length >= 2) {
-          const baseAction = actionParts[0];
-          const targetId = actionParts.slice(1).join("_");
+          let baseAction: string;
+          let targetId: string;
 
-          // Try character actions first
+          // Handle speak_to_X actions specially
+          if (action.startsWith("speak_to_")) {
+            baseAction = "speak_to";
+            targetId = action.substring(9); // Remove "speak_to_" prefix
+          } else if (action.startsWith("move_to_")) {
+            baseAction = "move_to";
+            targetId = action.substring(8); // Remove "move_to_" prefix
+          } else {
+            baseAction = actionParts[0];
+            targetId = actionParts.slice(1).join("_");
+          }
+
+          // Handle character actions
+          console.log(
+            `🔍 ${this.name}: Looking for character with ID: "${targetId}"`
+          );
+          console.log(
+            `🔍 ${this.name}: Available characters:`,
+            this.roomCharacters.map((c) => `${c.name} (id: ${c.id})`)
+          );
+
           const character = this.roomCharacters.find((c) => c.id === targetId);
           if (character) {
-            console.log(
-              `🔧 ${this.name}: Executing ${baseAction} on ${character.name}`
-            );
-
+            console.log(`✅ ${this.name}: Found character: ${character.name}`);
             if (baseAction === "speak_to") {
-              this.initiateConversation(character.name);
+              await this.speakToTown(); // Let AI generate contextual response
               return {
                 success: true,
                 message: `Started conversation with ${character.name}`,
@@ -679,25 +568,53 @@ export class SmartNPC implements Character {
                 success: true,
                 message: `Moving toward ${character.name}`,
               };
-            } else if (character instanceof SmartNPC) {
-              const result = character.handleCharacterInteraction(
-                baseAction,
-                this,
-                parameters
-              );
-              console.log(
-                `📝 ${this.name} -> ${character.name}: ${result.message}`
-              );
-              return result;
             }
-          } else {
-            // Use event system for object interactions - return a promise
+          }
+
+          // Also try finding character by name (alex -> Sheriff Martinez)
+          const characterByName = this.roomCharacters.find(
+            (c) =>
+              c.name.toLowerCase().includes(targetId.toLowerCase()) ||
+              c.id.toLowerCase() === targetId.toLowerCase()
+          );
+          if (characterByName) {
+            console.log(
+              `✅ ${this.name}: Found character by name: ${characterByName.name}`
+            );
+            if (baseAction === "speak_to") {
+              await this.speakToTown(); // Let AI generate contextual response
+              return {
+                success: true,
+                message: `Started conversation with ${characterByName.name}`,
+              };
+            } else if (baseAction === "move_to") {
+              this.moveToCharacter(characterByName.name);
+              return {
+                success: true,
+                message: `Moving toward ${characterByName.name}`,
+              };
+            }
+          }
+
+          console.log(
+            `❌ ${this.name}: Could not find character "${targetId}" for action "${baseAction}"`
+          );
+
+          // Handle object actions using event system
+          const obj = this.roomObjects.find((o) => o.id === targetId);
+          if (obj) {
+            // Emit action to town chat
+            this.scene.events.emit('town-action', {
+              actor: this.name,
+              action: `interacts with ${obj.name}`,
+              timestamp: Date.now()
+            });
+            
             return new Promise((resolve) => {
               console.log(
                 `🔧 ${this.name}: Firing event ${action} for object interaction`
               );
 
-              // Listen for response
               const responseEvent = `tool-response-${action}`;
               this.scene.events.once(
                 responseEvent,
@@ -713,10 +630,9 @@ export class SmartNPC implements Character {
                 }
               );
 
-              // Fire the tool event
               this.scene.events.emit(action, {
                 initiator: this,
-                parameters: { ...parameters, objectId: targetId },
+                parameters: { objectId: targetId },
               });
             });
           }
@@ -726,127 +642,12 @@ export class SmartNPC implements Character {
     }
   }
 
-  private moveToCharacter(targetName: string): void {
-    // Find target by name first, then fallback to other methods
-    let target = this.roomCharacters.find((c) => c.name === targetName);
-
-    // Fallback for player references
-    if (
-      !target &&
-      (targetName === "Player" ||
-        targetName === "player" ||
-        targetName === "Technician")
-    ) {
-      target = this.roomCharacters.find((c) => c.id === "player");
-    }
-
-    // Fallback for numeric IDs (avoid this path for NPCs)
-    if (!target && !isNaN(Number(targetName))) {
-      console.log(
-        `⚠️ ${this.name}: Avoiding numeric ID ${targetName}, looking for NPCs by name instead`
-      );
-      // Find first non-player character
-      target = this.roomCharacters.find(
-        (c) => c.id !== "player" && c.id !== this.id
-      );
-    }
-
-    if (target) {
-      const targetPos = target.getPosition();
-      const myPos = this.getPosition();
-      const currentDistance = Phaser.Math.Distance.Between(
-        myPos.x,
-        myPos.y,
-        targetPos.x,
-        targetPos.y
-      );
-
-      console.log(
-        `🏃 ${this.name} @(${Math.round(myPos.x)},${Math.round(
-          myPos.y
-        )}): Moving toward ${target.name || targetName} @(${Math.round(
-          targetPos.x
-        )},${Math.round(targetPos.y)}) - distance: ${Math.round(
-          currentDistance
-        )}px`
-      );
-
-      // Move closer to the target (within conversation range)
-      const angle = Phaser.Math.Angle.Between(
-        myPos.x,
-        myPos.y,
-        targetPos.x,
-        targetPos.y
-      );
-      const distance = 70; // Stop 70 pixels away (within 80px conversation range)
-      const newX = targetPos.x - Math.cos(angle) * distance;
-      const newY = targetPos.y - Math.sin(angle) * distance;
-
-      // Keep within bounds
-      const clampedX = Phaser.Math.Clamp(newX, 80, 720);
-      const clampedY = Phaser.Math.Clamp(newY, 120, 520);
-
-      console.log(
-        `📍 ${this.name}: Moving from (${Math.round(myPos.x)}, ${Math.round(
-          myPos.y
-        )}) to (${Math.round(clampedX)}, ${Math.round(clampedY)})`
-      );
-
-      // Faster, more direct movement
-      this.scene.tweens.add({
-        targets: [this.sprite, this.nameText],
-        x: clampedX,
-        duration: 800, // Faster movement (was 1500ms)
-        ease: "Power2",
-      });
-
-      this.scene.tweens.add({
-        targets: this.nameText,
-        y: clampedY - 25,
-        duration: 800,
-        ease: "Power2",
-      });
-
-      this.scene.tweens.add({
-        targets: this.sprite,
-        y: clampedY,
-        duration: 800,
-        ease: "Power2",
-        onComplete: () => {
-          // Try to start conversation immediately after reaching target
-          console.log(
-            `🎯 ${this.name}: Reached ${
-              target.name || targetName
-            }, attempting conversation`
-          );
-          setTimeout(() => {
-            if (this.canInitiateConversation(target.name || "Player")) {
-              this.initiateConversation(target.name || "Player");
-            } else {
-              // Return to idle if conversation failed
-              console.log(
-                `🔄 ${this.name}: Conversation failed, returning to IDLE`
-              );
-              this.startIdleState();
-            }
-          }, 200); // Small delay to ensure position is updated
-        },
-      });
-    } else {
-      console.log(
-        `❌ ${this.name}: Could not find target ${targetName} to move toward`
-      );
-      // Return to idle if target not found
-      this.startIdleState();
-    }
-  }
-
   private moveInDirection(direction: string): {
     success: boolean;
     message: string;
   } {
     const currentPos = this.getPosition();
-    const moveDistance = Phaser.Math.Between(60, 120); // Random distance between 60-120px
+    const moveDistance = Phaser.Math.Between(60, 120);
     let newX = currentPos.x;
     let newY = currentPos.y;
 
@@ -869,40 +670,17 @@ export class SmartNPC implements Character {
         break;
     }
 
-    // Keep within room bounds
     const clampedX = Phaser.Math.Clamp(newX, 80, 720);
     const clampedY = Phaser.Math.Clamp(newY, 120, 520);
 
-    // Check if movement was blocked by boundaries
     if (clampedX === currentPos.x && clampedY === currentPos.y) {
-      console.log(
-        `🚫 ${this.name}: Cannot move ${direction} - blocked by boundary`
-      );
       return {
         success: false,
         message: `Cannot move ${direction} - blocked by boundary`,
       };
     }
 
-    console.log(
-      `📍 ${this.name}: Moving ${direction} from (${Math.round(
-        currentPos.x
-      )}, ${Math.round(currentPos.y)}) to (${Math.round(
-        clampedX
-      )}, ${Math.round(clampedY)})`
-    );
-
-    // Play walking animation during movement
-    const spriteKey = this.sprite.texture.key;
-    if (spriteKey === "alex") {
-      this.sprite.play(`alex_walk_${this.lastDirection}`);
-    } else if (spriteKey === "amelia") {
-      this.sprite.play(`amelia_walk_${this.lastDirection}`);
-    } else if (spriteKey === "bob") {
-      this.sprite.play(`bob_walk_${this.lastDirection}`);
-    }
-
-    // Animate the movement
+    // Animate movement
     this.scene.tweens.add({
       targets: [this.sprite, this.nameText],
       x: clampedX,
@@ -923,16 +701,6 @@ export class SmartNPC implements Character {
       duration: 800,
       ease: "Power2",
       onComplete: () => {
-        // Return to idle animation after movement
-        if (spriteKey === "alex") {
-          this.sprite.play(`alex_idle_${this.lastDirection}`);
-        } else if (spriteKey === "amelia") {
-          this.sprite.play(`amelia_idle_${this.lastDirection}`);
-        } else if (spriteKey === "bob") {
-          this.sprite.play(`bob_idle_${this.lastDirection}`);
-        }
-
-        // Update line of sight after movement
         this.updateLineOfSight();
       },
     });
@@ -976,102 +744,235 @@ export class SmartNPC implements Character {
     });
   }
 
-  private canInitiateConversation(targetName: string): boolean {
-    const target = this.roomCharacters.find((c) => c.name === targetName);
-    if (!target) return false;
+  private moveToCharacter(targetName: string): void {
+    let target = this.roomCharacters.find((c) => c.name === targetName);
 
-    const myPos = this.getPosition();
-    const targetPos = target.getPosition();
-    const distance = Phaser.Math.Distance.Between(
-      myPos.x,
-      myPos.y,
-      targetPos.x,
-      targetPos.y
-    );
-
-    // Must be within proximity range (80px)
-    if (distance > 80) {
-      console.log(
-        `❌ ${this.name}: ${targetName} too far away (${Math.round(
-          distance
-        )}px) to start conversation`
-      );
-      return false;
+    if (!target && (targetName === "Player" || targetName === "player")) {
+      target = this.roomCharacters.find((c) => c.id === "player");
     }
 
-    // Check if target has other characters nearby (exclusive conversation rule)
-    const otherNearbyCharacters = this.roomCharacters.filter((char) => {
-      if (char.id === this.id || char.id === target.id) return false;
+    if (target) {
+      const targetPos = target.getPosition();
+      const myPos = this.getPosition();
 
-      const charDistance = Phaser.Math.Distance.Between(
+      const angle = Phaser.Math.Angle.Between(
+        myPos.x,
+        myPos.y,
         targetPos.x,
-        targetPos.y,
-        char.getPosition().x,
-        char.getPosition().y
+        targetPos.y
       );
-      return charDistance <= 80;
-    });
+      const distance = 70;
+      const newX = targetPos.x - Math.cos(angle) * distance;
+      const newY = targetPos.y - Math.sin(angle) * distance;
 
-    if (otherNearbyCharacters.length > 0) {
-      console.log(
-        `❌ ${this.name}: ${targetName} has other characters nearby, cannot start exclusive conversation`
-      );
-      return false;
+      const clampedX = Phaser.Math.Clamp(newX, 80, 720);
+      const clampedY = Phaser.Math.Clamp(newY, 120, 520);
+
+      this.scene.tweens.add({
+        targets: [this.sprite, this.nameText],
+        x: clampedX,
+        duration: 800,
+        ease: "Power2",
+      });
+
+      this.scene.tweens.add({
+        targets: this.nameText,
+        y: clampedY - 25,
+        duration: 800,
+        ease: "Power2",
+      });
+
+      this.scene.tweens.add({
+        targets: this.sprite,
+        y: clampedY,
+        duration: 800,
+        ease: "Power2",
+        onComplete: () => {
+          setTimeout(async () => {
+            await this.speakToTown(); // Let AI generate contextual response
+          }, 200);
+        },
+      });
     }
-
-    console.log(
-      `✅ ${
-        this.name
-      }: Can start conversation with ${targetName} (distance: ${Math.round(
-        distance
-      )}px, exclusive)`
-    );
-    return true;
   }
 
-  private initiateConversation(targetName: string): void {
-    // Check proximity and exclusivity before starting conversation
-    if (!this.canInitiateConversation(targetName)) {
-      console.log(
-        `🚫 ${this.name}: Cannot initiate conversation with ${targetName} - proximity/exclusivity check failed`
-      );
-      return;
+  private async speakToTown(message?: string): Promise<void> {
+    // Prevent spam by setting speaking state
+    if (this.isCurrentlySpeaking) return;
+    
+    this.isCurrentlySpeaking = true;
+    
+    let finalMessage = message;
+    
+    // If no message provided, generate one based on context
+    if (!finalMessage) {
+      try {
+        const context = this.buildAIContext();
+        finalMessage = await this.aiService.generateConversationResponse(
+          context,
+          "Generate a natural greeting or conversation starter based on the current situation."
+        );
+      } catch (error) {
+        console.error(`❌ ${this.name}: Failed to generate speech:`, error);
+        finalMessage = this.generateGreeting();
+      }
+    }
+    
+    console.log(`💭 CONVO ${this.name} says: "${finalMessage}"`);
+    this.showSpeech(finalMessage);
+    
+    // Emit global town speech event
+    this.scene.events.emit("town-speech", {
+      speaker: this.name,
+      speakerId: this.id,
+      message: finalMessage,
+      position: this.getPosition(),
+      timestamp: Date.now(),
+    });
+    
+    // Reset speaking state after a delay
+    setTimeout(() => {
+      this.isCurrentlySpeaking = false;
+    }, 2000);
+  }
+
+  private onTownSpeech = (data: {
+    speaker: string;
+    speakerId: string;
+    message: string;
+    position: { x: number; y: number };
+    timestamp: number;
+  }) => {
+    // Don't respond to own speech
+    if (data.speakerId === this.id) return;
+
+    // Check proximity - only respond if nearby
+    const distance = Phaser.Math.Distance.Between(
+      this.getPosition().x,
+      this.getPosition().y,
+      data.position.x,
+      data.position.y
+    );
+
+    const HEARING_RANGE = 200; // Slightly larger than line of sight
+    if (distance > HEARING_RANGE) return;
+
+    console.log(`👂 CONVO ${this.name}: Heard ${data.speaker} nearby"`);
+
+    // Add to global conversation memory
+    this.conversationMessages.push({
+      role: "user",
+      content: data.message,
+      name: data.speakerId,
+    });
+
+    // Respond after a delay if not currently speaking and should engage
+    if (!this.isCurrentlySpeaking && this.shouldEngageWithSpeech(data)) {
+      this.isCurrentlySpeaking = true;
+      setTimeout(async () => {
+        try {
+          const context = this.buildAIContext();
+          const response = await this.aiService.generateConversationResponse(
+            context,
+            data.message
+          );
+          console.log(`💬 CONVO ${this.name} responds: "${response}"`);
+          this.showSpeech(response);
+
+          // Add response to global memory
+          this.conversationMessages.push({
+            role: "assistant",
+            content: response,
+            name: this.id,
+          });
+
+          // Emit response as town speech
+          this.scene.events.emit("town-speech", {
+            speaker: this.name,
+            speakerId: this.id,
+            message: response,
+            position: this.getPosition(),
+            timestamp: Date.now(),
+          });
+        } catch (error) {
+          console.error(
+            `❌ CONVO ${this.name}: Failed to generate response:`,
+            error
+          );
+          const fallback = this.generateGreeting();
+          console.log(
+            `💬 CONVO ${this.name} responds (fallback): "${fallback}"`
+          );
+          this.showSpeech(fallback);
+        } finally {
+          this.isCurrentlySpeaking = false;
+        }
+      }, Phaser.Math.Between(500, 1000)); // Faster response for better conversation flow
+    }
+  };
+
+  private shouldEngageWithSpeech(data: {
+    speaker: string;
+    speakerId: string;
+    message: string;
+  }): boolean {
+    // Don't respond if already in player conversation
+    if (this.isInPlayerConversation) return false;
+
+    // Always respond to player messages (higher engagement)
+    if (data.speakerId === 'player') {
+      return Math.random() < 0.8; // 80% chance to respond to player
     }
 
-    const target = this.roomCharacters.find((c) => c.name === targetName);
+    // For NPC-to-NPC, use more selective filtering
+    if (Math.random() > 0.33) return false;
 
-    if (target && target.id === "player") {
-      console.log(`🗣️ ${this.name}: Starting conversation with Player`);
-      this.generatePlayerConversation();
-    } else if (target && target instanceof SmartNPC) {
-      console.log(`🗣️ ${this.name}: Starting conversation with ${targetName}`);
+    // More likely to respond if message mentions keywords relevant to personality
+    const message = data.message.toLowerCase();
+    const keywords = this.getPersonalityKeywords();
+    const isRelevant = keywords.some((keyword) => message.includes(keyword));
 
-      // Show speech bubble for NPC-to-NPC conversation
-      const greeting = this.generateGreeting(target);
-      console.log(`💭 ${this.name} says: "${greeting}"`);
-      this.showSpeech(greeting); // Always auto-hide
+    return isRelevant || Math.random() < 0.1; // 10% chance even if not relevant
+  }
 
-      // Both NPCs enter ENGAGED state
-      this.startEngagedState(target);
-      this.conversationPartner = target;
-
-      // Engage the target NPC
-      target.receiveConversationAttempt(this);
-    } else if (target) {
-      console.log(
-        `🤖 ${this.name}: Trying to talk to ${targetName} (not an NPC)`
-      );
-    } else {
-      console.log(`❌ ${this.name}: Could not find ${targetName} to talk to`);
+  private getPersonalityKeywords(): string[] {
+    const name = this.name.toLowerCase();
+    if (name.includes("doctor") || name.includes("thompson")) {
+      return [
+        "symptoms",
+        "patients",
+        "medical",
+        "health",
+        "strange",
+        "illness",
+      ];
     }
+    if (name.includes("sheriff") || name.includes("martinez")) {
+      return ["trouble", "law", "investigate", "reports", "crime", "safety"];
+    }
+    if (name.includes("sage") || name.includes("eleanor")) {
+      return ["books", "history", "ancient", "texts", "knowledge", "stones"];
+    }
+    if (name.includes("sarah")) {
+      return ["town", "folks", "rumors", "gossip", "community"];
+    }
+    return ["help", "talk", "discuss"];
+  }
+
+  private generateGreeting(): string {
+    const greetings = [
+      "Hello there, how are things?",
+      "Excuse me, I wanted to speak with you.",
+      "Good day, do you have a moment?",
+      "Hey there, I need to discuss something.",
+    ];
+    return Phaser.Utils.Array.GetRandom(greetings);
   }
 
   private async generatePlayerConversation(): Promise<void> {
     try {
-      // Build context for AI conversation
       const context = this.buildAIContext();
 
-      // Generate AI response for talking to player
       const response = await this.aiService.generateConversation({
         npcName: this.name,
         npcPersonality: this.personality,
@@ -1081,17 +982,12 @@ export class SmartNPC implements Character {
       });
 
       console.log(`💭 ${this.name} says to visitor: "${response}"`);
+      this.showSpeech(response);
 
-      // Show speech bubble
-      this.showSpeech(response); // Always auto-hide
-
-      // Get ChatInterface and add this NPC to conversations
+      // Update chat interface
       const chatInterface = (this.scene as any).chatInterface;
       if (chatInterface) {
-        // Make sure this NPC is in the nearby list so conversation appears
         chatInterface.updateNearbyNPCs([this]);
-
-        // Add the greeting as the first message in the conversation
         const conversation = chatInterface.conversations.get(this.id);
         if (conversation) {
           conversation.messages.push({
@@ -1100,309 +996,79 @@ export class SmartNPC implements Character {
             timestamp: Date.now(),
           });
           conversation.lastMessageTime = Date.now();
-
-          // Update the conversation list to show the new message
           chatInterface.updateConversationList();
         }
-      } else {
-        console.error(`❌ ${this.name}: No ChatInterface found in scene`);
       }
     } catch (error) {
       console.error(
         `❌ ${this.name}: Failed to generate player conversation:`,
         error
       );
-
-      // Fallback to simple greeting
-      const fallbackGreeting = this.generateGreeting({
-        name: "visitor",
-      } as Character);
-      this.showSpeech(fallbackGreeting); // Always auto-hide
-
-      const chatInterface = (this.scene as any).chatInterface;
-      if (chatInterface) {
-        chatInterface.updateNearbyNPCs([this]);
-        const conversation = chatInterface.conversations.get(this.id);
-        if (conversation) {
-          conversation.messages.push({
-            sender: "npc",
-            message: fallbackGreeting,
-            timestamp: Date.now(),
-          });
-          conversation.lastMessageTime = Date.now();
-          chatInterface.updateConversationList();
-        }
-      }
+      const fallback = "Hello there!";
+      this.showSpeech(fallback);
     }
   }
 
-  private generateGreeting(target: Character): string {
-    const greetings = [
-      `Hello there, how are things?`,
-      `Excuse me, I wanted to speak with you.`,
-      `Good day, do you have a moment?`,
-      `Hey there, I need to discuss something.`,
-    ];
-    return Phaser.Utils.Array.GetRandom(greetings);
-  }
-
-  // Public method for showing speech - always auto-hide
   public showSpeech(message: string): void {
+    console.log(`🗨️ ${this.name}: Showing speech bubble: "${message}" at (${this.sprite.x}, ${this.sprite.y})`);
     this.speechBubble.show(
       this.sprite.x,
       this.sprite.y - 40,
       message,
       this.name,
-      true // Always auto-hide
+      true // Auto-hide with longer timeout
     );
   }
 
-  // Public interface
   public receiveConversationAttempt(initiator: Character): void {
     console.log(
       `📞 ${this.name}: Received conversation attempt from ${initiator.name}`
     );
-    this.startEngagedState(initiator);
 
-    // Track conversation partner for shared context
-    if (initiator instanceof SmartNPC) {
-      this.conversationPartner = initiator;
-      this.generateNPCResponse(initiator);
-    }
-
-    console.log(
-      `🟢 ${this.name}: Now ENGAGED in conversation with ${initiator.name}`
-    );
-  }
-
-  private async generateConversationMessage(): Promise<void> {
-    try {
-      const context = this.buildAIContext();
-
-      // Include shared conversation history
-      const sharedHistory = this.getSharedConversationHistory();
-      const contextWithHistory =
-        sharedHistory.length > 0
-          ? `Previous conversation: ${sharedHistory.join(
-              " "
-            )}. Continue naturally.`
-          : "Continue the conversation naturally";
-
-      const response = await this.aiService.generateConversationResponse(
-        context,
-        contextWithHistory
-      );
-
-      // Natural delay based on message length (1-3 seconds)
-      const delay = Math.min(3000, Math.max(1000, response.length * 50));
-
-      setTimeout(() => {
-        console.log(`💭 ${this.name}: "${response}"`);
-        this.showSpeech(response);
-        this.addToConversationHistory(this.name, response);
-
-        // Fire speech event to conversation partner
-        if (this.conversationPartner) {
-          console.log(
-            `📡 ${this.name}: Firing speech event to ${this.conversationPartner.name}`
-          );
-          this.scene.events.emit(`npc-speech-${this.conversationPartner.id}`, {
-            speaker: this.name,
-            message: response,
-            speakerId: this.id,
-          });
-        } else {
-          console.log(
-            `⚠️ ${this.name}: No conversation partner to send event to`
-          );
-        }
-      }, delay);
-    } catch (error) {
-      console.error(
-        `❌ ${this.name}: Failed to generate conversation message:`,
-        error
-      );
+    if (initiator.id === "player") {
+      this.isInPlayerConversation = true;
+      console.log(`🟢 ${this.name}: Now in player conversation`);
     }
   }
 
-  private onReceiveSpeech = (data: {
-    speaker: string;
-    message: string;
-    speakerId: string;
-  }) => {
-    if (data.speakerId === this.id) return; // Don't respond to own speech
-
-    console.log(
-      `👂 ${this.name}: Received speech event from ${data.speaker}: "${data.message}"`
-    );
-
-    // Enter ENGAGED state when spoken to
-    if (this.state !== "ENGAGED") {
-      const speaker = this.roomCharacters.find((c) => c.id === data.speakerId);
-      if (speaker instanceof SmartNPC) {
-        console.log(
-          `🔗 ${this.name}: Setting conversation partner to ${speaker.name}`
-        );
-        this.conversationPartner = speaker;
-        this.startEngagedState(speaker);
-      }
-    }
-
-    // Clear any existing conversation timeout and set new one
-    if (this.conversationTimeoutTimer) {
-      this.conversationTimeoutTimer.destroy();
-    }
-
-    // Return to IDLE if no speech received for 30 seconds (increased from 10)
-    this.conversationTimeoutTimer = this.scene.time.delayedCall(30000, () => {
-      console.log(`⏰ ${this.name}: Conversation timeout, returning to IDLE`);
-      this.endEngagement();
-    });
-
-    // Respond after a natural delay (2-4 seconds) - but only if still engaged
-    const responseDelay = Phaser.Math.Between(2000, 4000);
-    console.log(
-      `⏱️ ${this.name}: Will respond to ${data.speaker} in ${responseDelay}ms`
-    );
-
-    setTimeout(() => {
-      if (this.state === "ENGAGED") {
-        console.log(`🗣️ ${this.name}: Generating response to ${data.speaker}`);
-
-        // Reset timeout when actively responding
-        if (this.conversationTimeoutTimer) {
-          this.conversationTimeoutTimer.destroy();
-          this.conversationTimeoutTimer = this.scene.time.delayedCall(
-            30000,
-            () => {
-              console.log(
-                `⏰ ${this.name}: Conversation timeout, returning to IDLE`
-              );
-              this.endEngagement();
-            }
-          );
-        }
-
-        this.generateConversationMessage();
-      } else {
-        console.log(`❌ ${this.name}: No longer ENGAGED, skipping response`);
-      }
-    }, responseDelay);
-  };
-
-  private getSharedConversationHistory(): string[] {
-    if (!this.conversationPartner) return [];
-
-    // Get last few messages from both NPCs
-    const myHistory = this.conversationHistory.slice(-3);
-    const partnerHistory =
-      this.conversationPartner.conversationHistory.slice(-3);
-
-    // Merge and sort by timestamp (if available) or just alternate
-    const combined = [...myHistory, ...partnerHistory]
-      .filter((msg) => msg.content)
-      .slice(-6); // Last 6 messages total
-
-    return combined.map((msg) => msg.content);
-  }
-
-  private addToConversationHistory(speaker: string, message: string): void {
-    const entry = {
-      role: "assistant",
-      content: `${speaker}: ${message}`,
-      timestamp: Date.now(),
-    };
-
-    this.conversationHistory.push(entry);
-
-    // Also add to partner's history for shared context
-    if (this.conversationPartner) {
-      this.conversationPartner.conversationHistory.push(entry);
-    }
-  }
-
-  private async generateNPCResponse(initiator: SmartNPC): Promise<void> {
-    try {
-      const context = this.buildAIContext();
-      const response = await this.aiService.generateConversationResponse(
-        context,
-        `${initiator.name} wants to talk to me`
-      );
-
-      // Natural response delay (1-2 seconds)
-      const delay = Phaser.Math.Between(1000, 2000);
-
-      setTimeout(() => {
-        console.log(
-          `💬 ${this.name}: Responding to ${initiator.name}: "${response}"`
-        );
-        this.showSpeech(response);
-        this.addToConversationHistory(this.name, response);
-
-        // Fire speech event to conversation partner (same as generateConversationMessage)
-        if (this.conversationPartner) {
-          console.log(
-            `📡 ${this.name}: Firing initial speech event to ${this.conversationPartner.name}`
-          );
-          this.scene.events.emit(`npc-speech-${this.conversationPartner.id}`, {
-            speaker: this.name,
-            message: response,
-            speakerId: this.id,
-          });
-        } else {
-          console.log(
-            `⚠️ ${this.name}: No conversation partner for initial response`
-          );
-        }
-      }, delay);
-    } catch (error) {
-      console.error(`❌ ${this.name}: Failed to generate NPC response:`, error);
-      const fallback = "Hello there!";
-      this.showSpeech(fallback);
-    }
-  }
   public sendMessage(message: string, sender: Character): void {
-    if (this.state === "ENGAGED") {
-      this.conversationHistory.push({
+    console.log(
+      `📨 ${this.name}: Received message from ${sender.name}: "${message}"`
+    );
+
+    if (sender.id === "player") {
+      this.conversationMessages.push({
         role: "user",
-        content: `${sender.name}: ${message}`,
+        content: message,
+        name: "player",
       });
 
-      // Reset engagement timer
-      if (this.engagementTimer) {
-        this.engagementTimer.destroy();
-        this.engagementTimer = this.scene.time.delayedCall(
-          ENGAGEMENT_TIMEOUT,
-          () => {
-            this.handleIgnoredConversation(sender);
-          }
-        );
-      }
-
-      // Generate AI response to the player's message
-      if (sender.id === "player") {
-        console.log(
-          `📨 ${this.name}: Received message from player: "${message}"`
-        );
-        this.generateResponseToPlayer(message);
-      }
+      // Generate response immediately - no delays
+      this.generateResponseToPlayer(message);
     }
   }
 
   private async generateResponseToPlayer(playerMessage: string): Promise<void> {
     try {
       const context = this.buildAIContext();
+
+      // Single LLM call for response
       const response = await this.aiService.generateConversationResponse(
         context,
         playerMessage
       );
 
-      console.log(`💬 ${this.name}: Responding to player: "${response}"`);
+      console.log(`💬 ${this.name}: "${response}"`);
+      this.showSpeech(response);
 
-      // Show speech bubble
-      this.showSpeech(response); // Always auto-hide
+      // Add to conversation history
+      this.conversationMessages.push({
+        role: "assistant",
+        content: response,
+        name: this.id,
+      });
 
-      // Add response to chat interface
+      // Update chat interface
       const chatInterface = (this.scene as any).chatInterface;
       if (chatInterface) {
         const conversation = chatInterface.conversations.get(this.id);
@@ -1413,8 +1079,6 @@ export class SmartNPC implements Character {
             timestamp: Date.now(),
           });
           conversation.lastMessageTime = Date.now();
-
-          // Update the conversation view if it's currently open
           if (chatInterface.activeConversation === this.id) {
             chatInterface.updateMessageArea();
           }
@@ -1422,26 +1086,8 @@ export class SmartNPC implements Character {
       }
     } catch (error) {
       console.error(`❌ ${this.name}: Failed to generate response:`, error);
-
-      const fallbackResponse = "I'm not sure how to respond to that.";
-      this.showSpeech(fallbackResponse); // Always auto-hide
-
-      const chatInterface = (this.scene as any).chatInterface;
-      if (chatInterface) {
-        const conversation = chatInterface.conversations.get(this.id);
-        if (conversation) {
-          conversation.messages.push({
-            sender: "npc",
-            message: fallbackResponse,
-            timestamp: Date.now(),
-          });
-          conversation.lastMessageTime = Date.now();
-
-          if (chatInterface.activeConversation === this.id) {
-            chatInterface.updateMessageArea();
-          }
-        }
-      }
+      const fallback = "I'm not sure how to respond to that.";
+      this.showSpeech(fallback);
     }
   }
 
@@ -1459,116 +1105,16 @@ export class SmartNPC implements Character {
     return { x: this.sprite.x, y: this.sprite.y };
   }
 
-  public getState(): NPCState {
-    return this.state;
-  }
-
-  // Define what tools this NPC offers to other characters
-  public getOfferedTools(): NPCTool[] {
-    const tools: NPCTool[] = [];
-
-    // Basic conversation tool
-    tools.push({
-      name: "speak_to",
-      description: `Start a conversation with ${this.name}`,
-    });
-
-    // Character-specific tools based on personality/role
-    if (this.name === "THE_ROBOT") {
-      tools.push({
-        name: "shutdown",
-        description: `Emergency shutdown of ${this.name}`,
-      });
-      tools.push({
-        name: "request_scan",
-        description: `Ask ${this.name} to scan the area`,
-      });
-    } else if (this.name === "Dr. Chen") {
-      tools.push({
-        name: "ask_for_help",
-        description: `Ask ${this.name} for scientific assistance`,
-      });
-      tools.push({
-        name: "collaborate",
-        description: `Propose collaboration with ${this.name}`,
-      });
-    }
-
-    return tools;
-  }
-
-  // Handle interactions from other characters
-  public handleCharacterInteraction(
-    action: string,
-    initiator: Character,
-    parameters?: any
-  ): { success: boolean; message: string } {
-    console.log(`🎭 ${this.name}: Handling ${action} from ${initiator.name}`);
-
-    switch (action) {
-      case "shutdown":
-        if (this.name === "THE_ROBOT") {
-          console.log(
-            `🤖 ${this.name}: Emergency shutdown initiated by ${initiator.name}`
-          );
-          this.showSpeech("EMERGENCY SHUTDOWN INITIATED. POWERING DOWN...");
-          // Could add actual shutdown logic here
-          return { success: true, message: "Robot shutdown successful" };
-        }
-        return { success: false, message: "Cannot shutdown this character" };
-
-      case "request_scan":
-        if (this.name === "THE_ROBOT") {
-          this.showSpeech("INITIATING AREA SCAN... SCANNING COMPLETE.");
-          return { success: true, message: "Area scan completed" };
-        }
-        return {
-          success: false,
-          message: "This character cannot perform scans",
-        };
-
-      case "ask_for_help":
-        if (this.name === "Dr. Chen") {
-          this.showSpeech(
-            "Of course! I'd be happy to help with the scientific analysis."
-          );
-          return { success: true, message: "Dr. Chen agrees to help" };
-        }
-        return {
-          success: false,
-          message: "This character cannot provide that type of help",
-        };
-
-      case "collaborate":
-        this.showSpeech(
-          `Excellent idea, ${initiator.name}! Let's work together.`
-        );
-        return { success: true, message: `${this.name} agrees to collaborate` };
-
-      default:
-        return {
-          success: false,
-          message: `${this.name} doesn't understand action: ${action}`,
-        };
-    }
-  }
-
-  private updateGlowColor(color: number, intensity: number): void {
-    if (this.glowEffect) {
-      this.glowEffect.clear();
-      this.glowEffect.fillStyle(color, intensity);
-      this.glowEffect.fillCircle(0, 0, 20);
-    }
+  public getState(): string {
+    return this.isInPlayerConversation ? "ENGAGED" : "IDLE";
   }
 
   public destroy(): void {
     // Clean up event listeners
-    this.scene.events.off(`npc-speech-${this.id}`, this.onReceiveSpeech, this);
+    this.scene.events.off("town-speech", this.onTownSpeech, this);
 
     if (this.actionTimer) this.actionTimer.destroy();
-    if (this.conversationTimeoutTimer) this.conversationTimeoutTimer.destroy();
-    if (this.breathingTween) this.breathingTween.destroy();
-    if (this.glowEffect) this.glowEffect.destroy();
+    if (this.activityTimer) this.activityTimer.destroy();
     this.speechBubble.destroy();
     this.sprite.destroy();
     this.nameText.destroy();

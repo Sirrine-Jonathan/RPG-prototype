@@ -13,11 +13,12 @@ export interface NPCContext {
     visibleCharacters: string[];
     availableTools: NPCTool[];
     conversationHistory?: any[];
+    currentGoals?: string[];
 }
 
 export class AIService {
     private static instance: AIService;
-    private baseUrl = 'http://localhost:11434/api/chat';
+    private baseUrl = 'http://localhost:11434/api/generate';  // Changed from /api/chat to /api/generate
     
     static getInstance(): AIService {
         if (!AIService.instance) {
@@ -26,61 +27,78 @@ export class AIService {
         return AIService.instance;
     }
     
-    async generateNPCAction(context: NPCContext, conversationMessages: Array<{role: string, content?: string, tool_calls?: any, name?: string}> = []): Promise<{ action: string; parameters?: any; reasoning?: string; tool_calls?: any }> {
-        try {
-            const systemPrompt = this.buildNPCSystemPrompt(context);
-            const userPrompt = this.buildNPCUserPrompt(context);
+    private selectModel(context: NPCContext, isConversation: boolean = false): string {
+        // Use fast model for all NPCs to prevent timeouts
+        return 'llama3.2:3b';
+    }
+  async generateNPCAction(context: NPCContext, conversationMessages: Array<{role: string, content?: string, tool_calls?: any, name?: string}> = []): Promise<{ action: string; parameters?: any; reasoning?: string; tool_calls?: any }> {
+    try {
+      const systemPrompt = this.buildNPCSystemPrompt(context);
+      const userPrompt = this.buildNPCUserPrompt(context);
+      
+      // Build conversation messages - limit to last 10 for LLM performance
+      const recentMessages = conversationMessages.slice(-10);
+      const messages = [
+        { role: 'system', content: systemPrompt },
+        ...recentMessages,
+        { role: 'user', content: userPrompt }
+      ];
+      
+      // Select model based on character importance
+      const selectedModel = this.selectModel(context, false);
+      
+      // Convert tools to proper Ollama format
+      const tools = context.availableTools.map(tool => ({
+        type: "function",
+        function: {
+          name: tool.name,
+          description: tool.description,
+          parameters: {
+            type: "object",
+            properties: tool.parameters ? Object.fromEntries(
+              Object.entries(tool.parameters).map(([key, value]) => [
+                key, 
+                { type: "string", description: `${key} parameter`, default: value }
+              ])
+            ) : {
+              target: { type: "string", description: "Target object or parameter" }
+            }
+          }
+        }
+      }));
+      
+      console.log(`🔍 ${context.name}: Sending ${messages.length} messages to LLM (${selectedModel}):`, 
+        messages.map(m => ({ role: m.role, content: m.content?.substring(0, 100) + '...', name: m.name })));
+      
+      const response = await Promise.race([
+        fetch('http://localhost:11434/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: selectedModel,
+            messages: messages,
+            tools: tools,
+            stream: false
+          })
+        }),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('LLM timeout')), 30000) // 30 second timeout
+        )
+      ]) as Response;
             
-            // Build conversation messages
-            const messages = [
-                { role: 'system', content: systemPrompt },
-                ...conversationMessages,
-                { role: 'user', content: userPrompt }
-            ];
-            
-            // Convert tools to proper Ollama format
-            const tools = context.availableTools.map(tool => ({
-                type: "function",
-                function: {
-                    name: tool.name,
-                    description: tool.description,
-                    parameters: {
-                        type: "object",
-                        properties: tool.parameters ? Object.fromEntries(
-                            Object.entries(tool.parameters).map(([key, value]) => [
-                                key, 
-                                { type: "string", description: `${key} parameter`, default: value }
-                            ])
-                        ) : {
-                            target: { type: "string", description: "Target object or parameter" }
-                        }
-                    }
-                }
-            }));
-            
-            console.log(`🔍 ${context.name}: Sending ${messages.length} messages to LLM:`, 
-                messages.map(m => ({ role: m.role, content: m.content?.substring(0, 100) + '...', name: m.name })));
-            
-            const response = await fetch(this.baseUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    model: 'qwen3:8b',
-                    messages: messages,
-                    tools: tools,
-                    stream: false
-                })
-            });
+            console.log(`🔍 ${context.name}: LLM response status: ${response.status}`);
             
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}`);
             }
             
             const data = await response.json();
+            console.log(`🔍 ${context.name}: LLM response data:`, data);
             
             // Parse tool call from response
             if (data.message?.tool_calls?.[0]) {
                 const toolCall = data.message.tool_calls[0];
+                console.log(`🔍 ${context.name}: Found tool call:`, toolCall);
                 return {
                     action: toolCall.function.name,
                     parameters: toolCall.function.arguments,
@@ -90,7 +108,10 @@ export class AIService {
             }
             
             // Fallback to text parsing if no tool call
-            return this.parseNPCResponse(data.message?.content || "");
+            console.log(`🔍 ${context.name}: No tool calls found, parsing text response`);
+            const textResponse = this.parseNPCResponse(data.message?.content || "");
+            console.log(`🔍 ${context.name}: Parsed text response:`, textResponse);
+            return textResponse;
             
         } catch (error) {
             console.warn('AI service failed, using fallback:', error);
@@ -126,15 +147,17 @@ INSTRUCTIONS:
 
             const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
             
-            const response = await fetch(this.baseUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    model: 'llama3.2:3b',
-                    prompt: fullPrompt,
-                    stream: false
-                })
-            });
+      const selectedModel = this.selectModel(context, true);
+      
+      const response = await fetch(this.baseUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: selectedModel,
+          prompt: fullPrompt,
+          stream: false
+        })
+      });
             
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}`);
@@ -150,6 +173,9 @@ INSTRUCTIONS:
     }
     
     async generateConversationResponse(context: NPCContext, playerMessage: string): Promise<string> {
+        console.log(`🤖 ${context.name}: generateConversationResponse() called with message: "${playerMessage}"`);
+        console.log(`🤖 ${context.name}: Conversation history length: ${context.conversationHistory?.length || 0}`);
+        
         try {
             const systemPrompt = `You are ${context.name}, an NPC in a mystery RPG game.
 
@@ -157,14 +183,19 @@ BACKGROUND: ${context.background}
 PERSONALITY: ${context.personality}
 CURRENT LOCATION: ${context.currentLocation}
 
-INSTRUCTIONS:
+${context.conversationHistory && context.conversationHistory.length > 0 ? 
+`CONVERSATION HISTORY:
+${context.conversationHistory.map(h => h.content).join('\n')}
+
+` : ''}INSTRUCTIONS:
 - Respond as ${context.name} would speak directly to a visitor
 - Keep responses under 50 words and conversational
 - Do NOT include actions, descriptions, or stage directions
 - Just speak naturally as the character
 - Address them as "Sir", "Ma'am", or use their name if known - don't use "Player"
 - If asked about whispering stones, be mysterious but helpful
-- Stay in character but be engaging`;
+- Stay in character but be engaging
+- Use the conversation history to provide contextual responses`;
 
             const userPrompt = `Player says: "${playerMessage}"
 
@@ -172,25 +203,45 @@ Respond as ${context.name} (speech only, no actions):`;
 
             const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
             
-            const response = await fetch(this.baseUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    model: 'llama3.2:3b',
-                    prompt: fullPrompt,
-                    stream: false
-                })
-            });
+            console.log(`🤖 ${context.name}: Sending request to LLM...`);
+            console.log(`🤖 ${context.name}: System prompt length: ${systemPrompt.length}`);
+            
+    const selectedModel = this.selectModel(context, true);
+    
+    const response = await fetch(this.baseUrl, {
+      method: 'POST', 
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: selectedModel,
+        prompt: fullPrompt,
+        stream: false
+      })
+    });
+            
+            console.log(`🤖 ${context.name}: LLM response status: ${response.status}`);
             
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}`);
             }
             
             const data = await response.json();
-            return this.cleanResponse(data.response);
+            console.log(`🤖 ${context.name}: LLM raw response data:`, data);
+            
+            const responseText = data.response || '';
+            console.log(`🤖 ${context.name}: LLM response text: "${responseText}"`);
+            
+            if (!responseText) {
+                throw new Error('Empty response from LLM');
+            }
+            
+            const cleanedResponse = this.cleanResponse(responseText);
+            console.log(`🤖 ${context.name}: LLM cleaned response: "${cleanedResponse}"`);
+            
+            return cleanedResponse;
             
         } catch (error) {
-            console.warn('AI conversation service failed, using fallback:', error);
+            console.error(`❌ ${context.name}: AI conversation service failed:`, error);
+            console.log(`🤖 ${context.name}: Using fallback response`);
             return this.getConversationFallback(context, playerMessage);
         }
     }
@@ -218,38 +269,54 @@ Respond as ${context.name} (speech only, no actions):`;
     }
     
     private buildNPCSystemPrompt(context: NPCContext): string {
+        const goalsSection = context.currentGoals && context.currentGoals.length > 0 
+            ? `\nCURRENT GOALS & MOTIVATIONS:\n${context.currentGoals.map(goal => `- ${goal}`).join('\n')}\n`
+            : '';
+
         return `You are ${context.name}, an NPC in a mystery RPG game.
 
 BACKGROUND: ${context.background}
 PERSONALITY: ${context.personality}
 CURRENT LOCATION: ${context.currentLocation}
-
+${goalsSection}
 VISIBLE OBJECTS: ${context.visibleObjects.join(', ') || 'none'}
 VISIBLE CHARACTERS: ${context.visibleCharacters.join(', ') || 'none'}
 
 AVAILABLE TOOLS:
 ${context.availableTools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}
 
+BEHAVIORAL GUIDELINES:
+- Pursue your current goals actively through your actions and conversations
+- When you see other characters nearby, prioritize talking to them if it serves your goals
+- Share information strategically based on your motivations
+- Ask questions that help you achieve your objectives
+- Use your personality and background to guide your approach
+- If you haven't talked to someone in a while and they might help your goals, approach them
+- Be curious about information that relates to your current objectives
+- Build relationships that support your goals and motivations
+
+INTERACTION PRIORITIES (in order):
+1. Take actions that directly advance your current goals
+2. If you see characters who might help your objectives, speak to them or move closer
+3. If engaged in conversation, steer it toward your interests and goals
+4. If alone, move around to find others who might have useful information
+5. Only wait or patrol if no goal-oriented opportunities exist
+
+Remember: You have specific motivations and objectives - let them drive your behavior!
+
 CRITICAL INSTRUCTIONS:
 - YOU MUST USE ONE OF THE AVAILABLE TOOLS - NO EXCEPTIONS
 - DO NOT generate text responses or descriptions
 - ONLY respond with valid JSON: {"action": "tool_name", "parameters": {...}, "reasoning": "brief reason"}
-- If searching for Energy Core, use "search" action with object parameter
-- ACT FIRST, coordinate later - prioritize concrete actions over discussion
-- Keep reasoning under 20 words
+- Keep reasoning under 20 words and relate it to your goals when possible
+- ACT in ways that advance your current objectives
 
 LEARNING FROM FAILURES:
 - NEVER repeat an action that just failed (check your conversation history)
 - If movement is blocked by boundary, try a DIFFERENT direction
-- If an object has no Energy Core, DON'T search it again
+- If an object has no useful information, DON'T search it again
 - Explore systematically: if one direction fails, try others
-- The room has multiple areas - explore ALL directions to find objects
-
-EXPLORATION STRATEGY:
-- If blocked by boundaries, try different movement directions
-- If you've searched objects in one area, move to find NEW objects
-- The Energy Core could be anywhere in the room - be thorough
-- Use all available movement options to explore thoroughly`;
+- Focus your exploration on areas that might contain information relevant to your goals`;
     }
     
     private buildNPCUserPrompt(context: NPCContext): string {

@@ -13,9 +13,17 @@ export class MainMenuScene extends Scene {
 
     // Title
     this.add
-      .text(width / 2, height * 0.25, "TECH STATION ALPHA", {
+      .text(width / 2, height * 0.25, "WHISPERING STONES", {
         fontSize: "48px",
         color: "#00ff00",
+        fontFamily: "monospace",
+      })
+      .setOrigin(0.5);
+
+    this.add
+      .text(width / 2, height * 0.35, "Mystery RPG", {
+        fontSize: "24px",
+        color: "#888888",
         fontFamily: "monospace",
       })
       .setOrigin(0.5);
@@ -62,7 +70,7 @@ export class MainMenuScene extends Scene {
 
   startNewGame() {
     console.log("Starting new game...");
-    this.scene.start("TechStationScene");
+    this.scene.start("TownOverworldScene");
   }
 
   loadGame() {

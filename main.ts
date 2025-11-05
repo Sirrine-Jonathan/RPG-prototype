@@ -1,22 +1,37 @@
 import { Game, AUTO } from 'phaser';
 import { MainMenuScene } from './src/scenes/MainMenuScene';
-import { TownScene } from './src/scenes/TownScene';
-import { PoliceStationScene } from './src/scenes/PoliceStationScene';
-import { MuseumScene } from './src/scenes/MuseumScene';
-import { LibraryScene } from './src/scenes/LibraryScene';
-import { ParkScene } from './src/scenes/ParkScene';
+import { TechStationScene } from './src/scenes/TechStationScene';
+import { SecurityStationScene } from './src/scenes/SecurityStationScene';
+import { ResearchLabScene } from './src/scenes/ResearchLabScene';
+import { MedicalBayScene } from './src/scenes/MedicalBayScene';
+import { EngineeringBayScene } from './src/scenes/EngineeringBayScene';
+import { TileIndexViewerScene } from './src/scenes/TileIndexViewerScene';
+import { PropsViewerScene } from './src/scenes/PropsViewerScene';
+import { PixelArtDemoScene } from './src/scenes/PixelArtDemoScene';
+import { AdvancedLevelDemoScene } from './src/scenes/AdvancedLevelDemoScene';
 
 const config = {
     type: AUTO,
     width: window.innerWidth,
     height: window.innerHeight,
     parent: 'game-container',
-    backgroundColor: '#000000',
+    backgroundColor: '#87CEEB', // Sky blue background for outdoor scenes
     scale: {
         mode: Phaser.Scale.RESIZE,
         autoCenter: Phaser.Scale.CENTER_BOTH
     },
-    scene: [MainMenuScene, TownScene, PoliceStationScene, MuseumScene, LibraryScene, ParkScene]
+    scene: [
+        MainMenuScene, 
+        TechStationScene, 
+        SecurityStationScene, 
+        ResearchLabScene, 
+        MedicalBayScene, 
+        EngineeringBayScene, 
+        TileIndexViewerScene, 
+        PropsViewerScene,
+        PixelArtDemoScene,
+        AdvancedLevelDemoScene
+    ]
 };
 
 const game = new Game(config);

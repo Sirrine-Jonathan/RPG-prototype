@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tileset Inspector</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: #2a2a2a;
+            color: white;
+        }
+        #game-container {
+            border: 2px solid #555;
+            margin: 20px 0;
+        }
+        .controls {
+            margin: 10px 0;
+        }
+        select, button {
+            padding: 8px;
+            margin: 5px;
+            font-size: 14px;
+        }
+        .info {
+            background: #333;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .tile-info {
+            background: #444;
+            padding: 10px;
+            border-radius: 3px;
+            margin: 5px 0;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <h1>Tileset Inspector</h1>
+    <p>Click on tiles to see their index numbers. Use this to map tile indices for the level system.</p>
+    
+    <div class="controls">
+        <label>Tileset: </label>
+        <select id="tilesetSelect">
+            <option value="grass">Grass Tileset</option>
+            <option value="stone">Stone Ground Tileset</option>
+            <option value="wall">Wall Tileset</option>
+            <option value="props">Props Tileset</option>
+            <option value="shadow">Shadow Tileset</option>
+            <option value="plant">Plant Tileset</option>
+            <option value="struct">Structure Tileset</option>
+        </select>
+        <button onclick="location.href='../../index.html'">← Back to Main</button>
+    </div>
+
+    <div id="game-container"></div>
+
+    <div class="info">
+        <h3>Tile Information</h3>
+        <div class="tile-info" id="tileInfo">Drag to select multiple tiles - results will appear in browser console</div>
+        
+        <h3>Instructions</h3>
+        <p>• Select a tileset from the dropdown above</p>
+        <p>• <strong>Drag to select</strong> rectangular areas of tiles</p>
+        <p>• Check the <strong>browser console</strong> (F12) for detailed tile information</p>
+        <p>• Selection shows as green rectangle, data logged to console</p>
+        <p>• Perfect for mapping tile groups that work together</p>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
+    <script src="main.ts"></script>
+</body>
+</html>

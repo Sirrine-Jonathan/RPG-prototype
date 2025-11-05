@@ -17,7 +17,7 @@ export interface NPCContext {
 
 export class AIService {
     private static instance: AIService;
-    private baseUrl = 'http://localhost:11434/api/generate';
+    private baseUrl = 'http://localhost:11434/api/chat';
     
     static getInstance(): AIService {
         if (!AIService.instance) {
@@ -26,18 +26,48 @@ export class AIService {
         return AIService.instance;
     }
     
-    async generateNPCAction(context: NPCContext): Promise<{ action: string; parameters?: any; reasoning?: string }> {
+    async generateNPCAction(context: NPCContext, conversationMessages: Array<{role: string, content?: string, tool_calls?: any, name?: string}> = []): Promise<{ action: string; parameters?: any; reasoning?: string; tool_calls?: any }> {
         try {
             const systemPrompt = this.buildNPCSystemPrompt(context);
             const userPrompt = this.buildNPCUserPrompt(context);
-            const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
+            
+            // Build conversation messages
+            const messages = [
+                { role: 'system', content: systemPrompt },
+                ...conversationMessages,
+                { role: 'user', content: userPrompt }
+            ];
+            
+            // Convert tools to proper Ollama format
+            const tools = context.availableTools.map(tool => ({
+                type: "function",
+                function: {
+                    name: tool.name,
+                    description: tool.description,
+                    parameters: {
+                        type: "object",
+                        properties: tool.parameters ? Object.fromEntries(
+                            Object.entries(tool.parameters).map(([key, value]) => [
+                                key, 
+                                { type: "string", description: `${key} parameter`, default: value }
+                            ])
+                        ) : {
+                            target: { type: "string", description: "Target object or parameter" }
+                        }
+                    }
+                }
+            }));
+            
+            console.log(`🔍 ${context.name}: Sending ${messages.length} messages to LLM:`, 
+                messages.map(m => ({ role: m.role, content: m.content?.substring(0, 100) + '...', name: m.name })));
             
             const response = await fetch(this.baseUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    model: 'llama3.2:3b',
-                    prompt: fullPrompt,
+                    model: 'qwen3:8b',
+                    messages: messages,
+                    tools: tools,
                     stream: false
                 })
             });
@@ -47,7 +77,20 @@ export class AIService {
             }
             
             const data = await response.json();
-            return this.parseNPCResponse(data.response);
+            
+            // Parse tool call from response
+            if (data.message?.tool_calls?.[0]) {
+                const toolCall = data.message.tool_calls[0];
+                return {
+                    action: toolCall.function.name,
+                    parameters: toolCall.function.arguments,
+                    reasoning: "AI tool call",
+                    tool_calls: data.message.tool_calls
+                };
+            }
+            
+            // Fallback to text parsing if no tool call
+            return this.parseNPCResponse(data.message?.content || "");
             
         } catch (error) {
             console.warn('AI service failed, using fallback:', error);
@@ -187,14 +230,26 @@ VISIBLE CHARACTERS: ${context.visibleCharacters.join(', ') || 'none'}
 AVAILABLE TOOLS:
 ${context.availableTools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}
 
-INSTRUCTIONS:
-- Stay in character as ${context.name}
-- PRIORITIZE social interaction - if you can see other characters, consider talking to them
-- Choose ONE tool to use based on your personality and situation
-- Respond in JSON format: {"action": "tool_name", "parameters": {...}, "reasoning": "why you chose this"}
-- Keep reasoning under 50 words
-- Be social and interactive, not just procedural
-- If you see colleagues, consider approaching them to chat about work or recent events`;
+CRITICAL INSTRUCTIONS:
+- YOU MUST USE ONE OF THE AVAILABLE TOOLS - NO EXCEPTIONS
+- DO NOT generate text responses or descriptions
+- ONLY respond with valid JSON: {"action": "tool_name", "parameters": {...}, "reasoning": "brief reason"}
+- If searching for Energy Core, use "search" action with object parameter
+- ACT FIRST, coordinate later - prioritize concrete actions over discussion
+- Keep reasoning under 20 words
+
+LEARNING FROM FAILURES:
+- NEVER repeat an action that just failed (check your conversation history)
+- If movement is blocked by boundary, try a DIFFERENT direction
+- If an object has no Energy Core, DON'T search it again
+- Explore systematically: if one direction fails, try others
+- The room has multiple areas - explore ALL directions to find objects
+
+EXPLORATION STRATEGY:
+- If blocked by boundaries, try different movement directions
+- If you've searched objects in one area, move to find NEW objects
+- The Energy Core could be anywhere in the room - be thorough
+- Use all available movement options to explore thoroughly`;
     }
     
     private buildNPCUserPrompt(context: NPCContext): string {
@@ -206,10 +261,25 @@ INSTRUCTIONS:
             // Try to extract JSON from the response
             const jsonMatch = content.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
-                return JSON.parse(jsonMatch[0]);
+                const parsed = JSON.parse(jsonMatch[0]);
+                // Ensure the parsed object has an action property
+                if (parsed && typeof parsed.action === 'string' && parsed.action.trim()) {
+                    return parsed;
+                } else {
+                    console.warn('Parsed JSON missing valid action property:', parsed);
+                }
+            }
+            
+            // Try to parse text format like "I chose action: move_west with parameters: {}. Reasoning: AI tool call"
+            const textMatch = content.match(/I chose action:\s*(\w+)(?:\s+with parameters:\s*(\{[^}]*\}))?\s*\.\s*Reasoning:\s*(.+)/);
+            if (textMatch) {
+                const action = textMatch[1];
+                const parameters = textMatch[2] ? JSON.parse(textMatch[2]) : {};
+                const reasoning = textMatch[3];
+                return { action, parameters, reasoning };
             }
         } catch (error) {
-            console.warn('Failed to parse NPC response as JSON:', error);
+            console.warn('Failed to parse NPC response:', error);
         }
         
         // Fallback parsing

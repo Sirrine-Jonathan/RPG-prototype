@@ -30,6 +30,9 @@ export abstract class InteractiveObject {
             backgroundColor: '#000000',
             padding: { x: 2, y: 1 }
         }).setOrigin(0.5);
+
+        // Register event listeners for this object's tools
+        this.registerToolEvents();
     }
 
     // Called when NPC discovers this object
@@ -39,10 +42,37 @@ export abstract class InteractiveObject {
     }
 
     // Get available tools for NPCs to interact with this object
-    abstract getAvailableTools(): NPCTool[];
+    abstract getOfferedTools(): NPCTool[];
 
     // Handle interaction from NPC
     abstract handleInteraction(toolName: string, parameters?: any): InteractionResult;
+
+    // Register event listeners for this object's tools
+    protected registerToolEvents(): void {
+        const tools = this.getOfferedTools();
+        tools.forEach(tool => {
+            const eventName = `${tool.name}_${this.id}`;
+            this.scene.events.on(eventName, this.handleToolEvent, this);
+        });
+    }
+
+    private handleToolEvent = (data: { initiator: any; parameters?: any }) => {
+        const eventName = this.scene.events.eventNames().find(name => 
+            typeof name === 'string' && name.endsWith(`_${this.id}`)
+        ) as string;
+        
+        if (eventName) {
+            const toolName = eventName.replace(`_${this.id}`, '');
+            const result = this.handleInteraction(toolName, data.parameters);
+            
+            // Emit response back to initiator
+            this.scene.events.emit(`tool-response-${eventName}`, {
+                success: result.success,
+                message: result.message,
+                target: this.id
+            });
+        }
+    };
 
     // Get current state description for NPC context
     getStateDescription(): string {
@@ -58,6 +88,13 @@ export abstract class InteractiveObject {
     }
 
     destroy(): void {
+        // Clean up event listeners
+        const tools = this.getOfferedTools();
+        tools.forEach(tool => {
+            const eventName = `${tool.name}_${this.id}`;
+            this.scene.events.off(eventName, this.handleToolEvent, this);
+        });
+        
         this.sprite.destroy();
         this.nameText.destroy();
     }
@@ -71,7 +108,7 @@ export class Desk extends InteractiveObject {
         super(scene, x, y, id, 'Desk', 0x8b4513);
     }
 
-    getAvailableTools(): NPCTool[] {
+    getOfferedTools(): NPCTool[] {
         const tools: NPCTool[] = [
             {
                 name: 'examine_desk',

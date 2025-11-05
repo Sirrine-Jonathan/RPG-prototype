@@ -9,23 +9,24 @@ export class MainMenuScene extends Scene {
     const { width, height } = this.cameras.main;
 
     // Background
-    this.add.rectangle(width / 2, height / 2, width, height, 0x1a1a2e);
+    this.add.rectangle(width / 2, height / 2, width, height, 0x0a0a0a);
 
     // Title
     this.add
-      .text(width / 2, height * 0.25, "Whispering Stones", {
+      .text(width / 2, height * 0.25, "TECH STATION ALPHA", {
         fontSize: "48px",
-        color: "#ffffff",
-        fontFamily: "Arial",
+        color: "#00ff00",
+        fontFamily: "monospace",
       })
       .setOrigin(0.5);
 
     // Menu buttons
     const buttonStyle = {
       fontSize: "24px",
-      color: "#ffffff",
-      backgroundColor: "#16213e",
+      color: "#00ff00",
+      backgroundColor: "#001100",
       padding: { x: 20, y: 10 },
+      fontFamily: "monospace"
     };
 
     const newGameBtn = this.add
@@ -54,15 +55,14 @@ export class MainMenuScene extends Scene {
 
     // Button hover effects
     [newGameBtn, loadGameBtn, settingsBtn, exitBtn].forEach((btn) => {
-      btn.on("pointerover", () => btn.setStyle({ backgroundColor: "#0f3460" }));
-      btn.on("pointerout", () => btn.setStyle({ backgroundColor: "#16213e" }));
+      btn.on("pointerover", () => btn.setStyle({ backgroundColor: "#003300" }));
+      btn.on("pointerout", () => btn.setStyle({ backgroundColor: "#001100" }));
     });
   }
 
   startNewGame() {
-    // TODO: Transition to town/outside scene
     console.log("Starting new game...");
-    this.scene.start("TownScene");
+    this.scene.start("TechStationScene");
   }
 
   loadGame() {

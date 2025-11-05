@@ -107,6 +107,10 @@ export class AssetManager {
   }
 
   createPlayerAnimations(): void {
+    // Check if animations already exist to prevent warnings
+    if (this.scene.anims.exists('adam_idle')) {
+      return;
+    }
     // Modern character animations - 24 frames per row
     // Row 0 (frames 0-23): Down-facing walk
     // Row 1 (frames 24-47): Left-facing walk

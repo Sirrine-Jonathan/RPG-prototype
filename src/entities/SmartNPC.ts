@@ -32,10 +32,13 @@ export class SmartNPC implements Character {
   private activityTimer?: Phaser.Time.TimerEvent;
   private lastEventTime: number = 0; // Track when last event occurred
   private pendingLLMRequest?: Promise<any>; // Track in-flight requests
+  private pathfindingTimer?: Phaser.Time.TimerEvent; // Separate timer for pathfinding
+  private isMoving: boolean = false; // Track if NPC is currently moving
 
   // Discovery and awareness
   private discoveredObjects: Set<string> = new Set();
   private discoveredCharacters: Set<string> = new Set();
+  private discoveredLocations: Map<string, {x: number, y: number, name: string}> = new Map();
   private conversationMessages: Array<{
     role: string;
     content?: string;
@@ -53,6 +56,8 @@ export class SmartNPC implements Character {
   private pathfinding: Pathfinding;
   private currentPath: Array<{x: number, y: number}> = [];
   private pathIndex: number = 0;
+  private pathTarget: string = ""; // Track what we're moving toward
+  private role: string; // Store the NPC's role for special abilities
 
   constructor(
     scene: Scene,
@@ -71,9 +76,13 @@ export class SmartNPC implements Character {
     this.name = name;
     this.personality = personality;
     this.background = background;
+    this.role = role;
     this.aiService = AIService.getInstance();
     this.speechBubble = new SpeechBubble(scene);
     this.pathfinding = new Pathfinding(30, 2400, 1800);
+
+    // Initialize known landmarks
+    this.initializeKnownLandmarks();
 
     // Listen for global town speech events
     this.scene.events.on("town-speech", this.onTownSpeech, this);
@@ -115,6 +124,245 @@ export class SmartNPC implements Character {
       callback: this.logActivity,
       callbackScope: this,
       loop: true,
+    });
+  }
+
+  private moveToTarget(target: string): { success: boolean; message: string } {
+    const currentPos = this.getPosition();
+    let targetX: number;
+    let targetY: number;
+    let targetName: string;
+
+    // Check if target is coordinates (x,y format)
+    if (target.includes(',')) {
+      const coords = target.split(',').map(s => parseInt(s.trim()));
+      if (coords.length === 2 && !isNaN(coords[0]) && !isNaN(coords[1])) {
+        targetX = coords[0];
+        targetY = coords[1];
+        targetName = `coordinates (${targetX}, ${targetY})`;
+      } else {
+        return { success: false, message: `Invalid coordinate format: ${target}` };
+      }
+    } else {
+      // Try to find landmark by name
+      const landmarkKey = target.toLowerCase().replace(/\s+/g, '_');
+      const landmark = this.discoveredLocations.get(landmarkKey);
+      
+      if (landmark) {
+        targetX = landmark.x;
+        targetY = landmark.y;
+        targetName = landmark.name;
+      } else {
+        // Try partial matching for landmark names
+        const partialMatch = Array.from(this.discoveredLocations.entries())
+          .find(([key, location]) => 
+            key.includes(landmarkKey) || 
+            location.name.toLowerCase().includes(target.toLowerCase())
+          );
+        
+        if (partialMatch) {
+          targetX = partialMatch[1].x;
+          targetY = partialMatch[1].y;
+          targetName = partialMatch[1].name;
+        } else {
+          return { success: false, message: `Unknown location: ${target}` };
+        }
+      }
+    }
+
+    // Use pathfinding to calculate full path to target
+    const path = this.pathfinding.findPath(currentPos.x, currentPos.y, targetX, targetY);
+    
+    if (path.length > 1) {
+      // Store the full path for continuous movement
+      this.currentPath = path.slice(1); // Skip current position
+      this.pathIndex = 0;
+      this.pathTarget = targetName;
+      
+      // Start smooth pathfinding like the player
+      this.isMoving = true;
+      this.followPath();
+      
+      const distance = Math.round(Phaser.Math.Distance.Between(currentPos.x, currentPos.y, targetX, targetY));
+      return { 
+        success: true, 
+        message: `Started pathfinding to ${targetName} (${distance} units away)` 
+      };
+    } else {
+      return {
+        success: false,
+        message: `Cannot find path to ${targetName} - path blocked`,
+      };
+    }
+  }
+
+  private continuePathfinding(): { success: boolean; message: string } {
+    if (this.currentPath.length === 0 || this.pathIndex >= this.currentPath.length) {
+      // Path completed
+      this.currentPath = [];
+      this.pathIndex = 0;
+      const target = this.pathTarget;
+      this.pathTarget = "";
+      return { success: true, message: `Arrived at ${target}` };
+    }
+
+    // Move to next step in path
+    const nextStep = this.currentPath[this.pathIndex];
+    this.moveToPosition(nextStep.x, nextStep.y);
+    this.pathIndex++;
+
+    const remaining = this.currentPath.length - this.pathIndex;
+    return { 
+      success: true, 
+      message: `Continuing toward ${this.pathTarget} (${remaining} steps remaining)` 
+    };
+  }
+
+  private abandonPath(): { success: boolean; message: string } {
+    const target = this.pathTarget;
+    this.currentPath = [];
+    this.pathIndex = 0;
+    this.pathTarget = "";
+    this.isMoving = false;
+    return { 
+      success: true, 
+      message: `Abandoned pathfinding to ${target}` 
+    };
+  }
+
+  private followPath(): void {
+    if (this.pathIndex >= this.currentPath.length) {
+      // Path completed
+      this.isMoving = false;
+      const target = this.pathTarget;
+      this.currentPath = [];
+      this.pathIndex = 0;
+      this.pathTarget = "";
+      
+      // Play idle animation
+      this.playIdleAnimation();
+      console.log(`🎯 ${this.name}: Arrived at ${target}`);
+      return;
+    }
+
+    const target = this.currentPath[this.pathIndex];
+    const distance = Phaser.Math.Distance.Between(this.sprite.x, this.sprite.y, target.x, target.y);
+    
+    if (distance < 5) {
+      this.pathIndex++;
+      this.followPath();
+      return;
+    }
+
+    // Determine direction for animation
+    const dx = target.x - this.sprite.x;
+    const dy = target.y - this.sprite.y;
+    
+    if (Math.abs(dx) > Math.abs(dy)) {
+      this.lastDirection = dx > 0 ? 'right' : 'left';
+    } else {
+      this.lastDirection = dy > 0 ? 'down' : 'up';
+    }
+    
+    // Play walking animation
+    this.playWalkAnimation();
+
+    // Move towards target with smooth tween
+    this.scene.tweens.add({
+      targets: [this.sprite, this.nameText],
+      x: target.x,
+      duration: 300,
+      ease: 'Linear',
+      onComplete: () => {
+        this.pathIndex++;
+        this.followPath();
+      }
+    });
+
+    this.scene.tweens.add({
+      targets: this.nameText,
+      y: target.y - 35,
+      duration: 300,
+      ease: 'Linear'
+    });
+
+    this.scene.tweens.add({
+      targets: this.sprite,
+      y: target.y,
+      duration: 300,
+      ease: 'Linear'
+    });
+  }
+
+  private playWalkAnimation(): void {
+    if (!this.sprite || !this.sprite.scene || !this.sprite.anims) return;
+    
+    const spriteKey = this.sprite.texture.key;
+    if (spriteKey === "alex") {
+      this.sprite.play(`alex_walk_${this.lastDirection}`, true);
+    } else if (spriteKey === "amelia") {
+      this.sprite.play(`amelia_walk_${this.lastDirection}`, true);
+    } else if (spriteKey === "bob") {
+      this.sprite.play(`bob_walk_${this.lastDirection}`, true);
+    }
+  }
+
+  private playIdleAnimation(): void {
+    if (!this.sprite || !this.sprite.scene || !this.sprite.anims) return;
+    
+    const spriteKey = this.sprite.texture.key;
+    if (spriteKey === "alex") {
+      this.sprite.play(`alex_idle_${this.lastDirection}`, true);
+    } else if (spriteKey === "amelia") {
+      this.sprite.play(`amelia_idle_${this.lastDirection}`, true);
+    } else if (spriteKey === "bob") {
+      this.sprite.play(`bob_idle_${this.lastDirection}`, true);
+    }
+  }
+
+  private takeNote(note: string, category: string): { success: boolean; message: string } {
+    const noteEntry = {
+      id: Date.now().toString(),
+      content: note,
+      category: category,
+      timestamp: new Date().toLocaleString(),
+      location: "Town Square" // Could be enhanced to track actual location
+    };
+
+    // Emit note to the scene for storage
+    this.scene.events.emit('note-taken', noteEntry);
+    
+    // Also speak the note for immediate feedback
+    this.showSpeech(`📝 Noted: ${note}`);
+    
+    return { 
+      success: true, 
+      message: `Recorded note: ${note}` 
+    };
+  }
+
+  private initializeKnownLandmarks(): void {
+    // NPCs know about major town landmarks from the start
+    const landmarks = [
+      { name: "Police Station", x: 600, y: 450 },
+      { name: "Hospital", x: 1800, y: 450 },
+      { name: "School", x: 600, y: 1350 },
+      { name: "Grocery Store", x: 1800, y: 1350 },
+      { name: "Art Museum", x: 1200, y: 300 },
+      { name: "Library", x: 300, y: 900 },
+      { name: "Tavern", x: 2100, y: 900 },
+      { name: "Town Center", x: 1200, y: 900 },
+      { name: "North Well", x: 600, y: 1200 },
+      { name: "Main Well", x: 1200, y: 600 },
+      { name: "Town Square", x: 1200, y: 900 },
+    ];
+
+    landmarks.forEach(landmark => {
+      this.discoveredLocations.set(landmark.name.toLowerCase().replace(/\s+/g, '_'), {
+        x: landmark.x,
+        y: landmark.y,
+        name: landmark.name
+      });
     });
   }
 
@@ -333,6 +581,9 @@ export class SmartNPC implements Character {
     // Add specific goals and motivations based on character
     const goals = this.getCharacterGoals();
 
+    // Build spatial awareness context
+    const spatialContext = this.buildSpatialContext();
+
     return {
       name: this.name,
       background: this.background,
@@ -343,6 +594,7 @@ export class SmartNPC implements Character {
       availableTools,
       conversationHistory: contextHistory,
       currentGoals: goals,
+      spatialContext: spatialContext,
     };
   }
 
@@ -411,6 +663,63 @@ export class SmartNPC implements Character {
     ];
   }
 
+  private buildSpatialContext(): any {
+    const myPos = this.getPosition();
+    
+    // Get known landmarks
+    const knownLandmarks = Array.from(this.discoveredLocations.entries()).map(([key, location]) => ({
+      name: location.name,
+      key: key,
+      x: location.x,
+      y: location.y,
+      distance: Math.round(Phaser.Math.Distance.Between(myPos.x, myPos.y, location.x, location.y))
+    }));
+
+    // Get discovered characters with their last known positions
+    const discoveredCharacterPositions = Array.from(this.discoveredCharacters)
+      .map(charId => {
+        const char = this.roomCharacters.find(c => c.id === charId);
+        if (char) {
+          const pos = char.getPosition();
+          return {
+            name: char.name,
+            id: charId,
+            x: pos.x,
+            y: pos.y,
+            distance: Math.round(Phaser.Math.Distance.Between(myPos.x, myPos.y, pos.x, pos.y))
+          };
+        }
+        return null;
+      })
+      .filter(char => char !== null);
+
+    // Get discovered objects with positions
+    const discoveredObjectPositions = Array.from(this.discoveredObjects)
+      .map(objId => {
+        const obj = this.roomObjects.find(o => o.id === objId);
+        if (obj) {
+          const pos = obj.getPosition();
+          return {
+            name: obj.name,
+            id: objId,
+            x: pos.x,
+            y: pos.y,
+            distance: Math.round(Phaser.Math.Distance.Between(myPos.x, myPos.y, pos.x, pos.y))
+          };
+        }
+        return null;
+      })
+      .filter(obj => obj !== null);
+
+    return {
+      currentPosition: { x: Math.round(myPos.x), y: Math.round(myPos.y) },
+      knownLandmarks: knownLandmarks.sort((a, b) => a.distance - b.distance),
+      discoveredCharacters: discoveredCharacterPositions.sort((a, b) => a.distance - b.distance),
+      discoveredObjects: discoveredObjectPositions.sort((a, b) => a.distance - b.distance),
+      mapBounds: { width: 2400, height: 1800 }
+    };
+  }
+
   private getAvailableTools(): NPCTool[] {
     const tools: NPCTool[] = [];
 
@@ -422,6 +731,58 @@ export class SmartNPC implements Character {
         parameters: { message: "string" }
       }
     );
+
+    // Add move_to tool for intelligent pathfinding
+    tools.push(
+      {
+        name: "move_to",
+        description: "Move to a specific location using pathfinding. Can use coordinates (x,y) or landmark names like 'hospital', 'library', 'town_center'",
+        parameters: { 
+          target: "string - either 'x,y' coordinates or landmark name like 'hospital', 'library', 'police_station'" 
+        }
+      }
+    );
+
+    // Add abandon_path tool if currently pathfinding
+    if (this.currentPath.length > 0 && this.pathIndex < this.currentPath.length) {
+      tools.push(
+        {
+          name: "abandon_path",
+          description: `Stop pathfinding to ${this.pathTarget} and do something else instead.`,
+          parameters: {}
+        }
+      );
+    }
+
+    // Add special tools based on role
+    if (this.role === "guide") {
+      tools.push(
+        {
+          name: "take_note",
+          description: "Record an important discovery, conversation, or clue for the player's reference",
+          parameters: { 
+            note: "string - the important information to record",
+            category: "string - category like 'clue', 'character', 'location', 'event'"
+          }
+        },
+        {
+          name: "give_hint",
+          description: "Provide a helpful hint about what the player should do next or where to investigate",
+          parameters: {
+            hint: "string - the helpful guidance to provide"
+          }
+        },
+        {
+          name: "explain_controls",
+          description: "Explain how to interact with the game world, NPCs, or objects",
+          parameters: {
+            explanation: "string - the control or interaction explanation"
+          }
+        }
+      );
+      // Guide doesn't get movement tools - it follows the player automatically
+      return tools;
+    }
 
     // Always include basic tools
     tools.push(
@@ -529,6 +890,35 @@ export class SmartNPC implements Character {
       case "patrol":
         this.moveRandomly();
         return { success: true, message: "Moved to new area" };
+
+      case "move_to":
+        if (parameters?.target) {
+          return this.moveToTarget(parameters.target);
+        }
+        return { success: false, message: "No target specified for move_to" };
+
+      case "abandon_path":
+        return this.abandonPath();
+
+      case "take_note":
+        if (parameters?.note) {
+          return this.takeNote(parameters.note, parameters.category || "general");
+        }
+        return { success: false, message: "No note content provided" };
+
+      case "give_hint":
+        if (parameters?.hint) {
+          this.showSpeech(`💡 Hint: ${parameters.hint}`);
+          return { success: true, message: `Provided hint: ${parameters.hint}` };
+        }
+        return { success: false, message: "No hint provided" };
+
+      case "explain_controls":
+        if (parameters?.explanation) {
+          this.showSpeech(`🎮 ${parameters.explanation}`);
+          return { success: true, message: `Explained controls: ${parameters.explanation}` };
+        }
+        return { success: false, message: "No explanation provided" };
 
       case "speak":
         if (parameters?.message) {
@@ -715,29 +1105,61 @@ export class SmartNPC implements Character {
   }
 
   private moveToPosition(x: number, y: number): void {
+    // Get scene bounds to keep NPCs within the scene
+    const sceneBounds = this.getSceneBounds();
+    const clampedX = Phaser.Math.Clamp(x, sceneBounds.minX, sceneBounds.maxX);
+    const clampedY = Phaser.Math.Clamp(y, sceneBounds.minY, sceneBounds.maxY);
+
+    // Calculate direction for animation
+    const dx = clampedX - this.sprite.x;
+    const dy = clampedY - this.sprite.y;
+    
+    if (Math.abs(dx) > Math.abs(dy)) {
+      this.lastDirection = dx > 0 ? 'right' : 'left';
+    } else {
+      this.lastDirection = dy > 0 ? 'down' : 'up';
+    }
+    
+    // Play walking animation
+    this.playWalkAnimation();
+
     this.scene.tweens.add({
       targets: [this.sprite, this.nameText],
-      x: x,
+      x: clampedX,
       duration: 1000,
       ease: "Power1",
     });
 
     this.scene.tweens.add({
       targets: this.nameText,
-      y: y - 25,
+      y: clampedY - 25,
       duration: 1000,
       ease: "Power1",
     });
 
     this.scene.tweens.add({
       targets: this.sprite,
-      y: y,
+      y: clampedY,
       duration: 1000,
       ease: "Power1",
       onComplete: () => {
+        // Play idle animation when movement completes
+        this.playIdleAnimation();
         this.updateLineOfSight();
       },
     });
+  }
+
+  private getSceneBounds(): { minX: number, maxX: number, minY: number, maxY: number } {
+    // Default bounds for town scene
+    let bounds = { minX: 80, maxX: 2320, minY: 120, maxY: 1680 };
+    
+    // Hospital scene bounds
+    if (this.scene.scene.key === 'HospitalScene') {
+      bounds = { minX: 50, maxX: 750, minY: 50, maxY: 550 };
+    }
+    
+    return bounds;
   }
 
   private moveRandomly(): void {
@@ -992,6 +1414,47 @@ export class SmartNPC implements Character {
 
   public getState(): string {
     return this.isInPlayerConversation ? "ENGAGED" : "IDLE";
+  }
+
+  update() {
+    // Guide NPCs follow the player automatically
+    if (this.role === "guide") {
+      this.followPlayer();
+    }
+  }
+
+  private followPlayer(): void {
+    // Only follow in TownOverworldScene
+    if (this.scene.scene.key !== 'TownOverworldScene') {
+      return;
+    }
+
+    const player = this.roomCharacters.find(c => c.id === "player");
+    if (!player) return;
+
+    const playerPos = player.getPosition();
+    const myPos = this.getPosition();
+    const distance = Phaser.Math.Distance.Between(myPos.x, myPos.y, playerPos.x, playerPos.y);
+
+    // Follow if player is too far away (more than 80 units) and not already moving
+    if (distance > 80 && !this.isMoving) {
+      // Calculate position slightly behind the player
+      const followDistance = 60;
+      const angle = Phaser.Math.Angle.Between(playerPos.x, playerPos.y, myPos.x, myPos.y);
+      const targetX = playerPos.x + Math.cos(angle) * followDistance;
+      const targetY = playerPos.y + Math.sin(angle) * followDistance;
+
+      // Use pathfinding system for smooth movement
+      const path = this.pathfinding.findPath(myPos.x, myPos.y, targetX, targetY);
+      
+      if (path.length > 1) {
+        this.currentPath = path.slice(1);
+        this.pathIndex = 0;
+        this.pathTarget = "Player";
+        this.isMoving = true;
+        this.followPath();
+      }
+    }
   }
 
   public destroy(): void {

@@ -103,21 +103,28 @@ export class GameStateManager {
         };
         
         // Sheriff Martinez - becomes hostile when exposed
-        if (npcName.toLowerCase().includes('sheriff')) {
+        if (npcName.toLowerCase().includes('sheriff') || npcName.toLowerCase().includes('martinez')) {
             if (this.hasFlag(GameFlag.SHERIFF_EXPOSED)) {
                 context.trustLevel = 'hostile';
                 context.behavior = 'evasive';
+                context.goals = ['Hide evidence', 'Mislead investigation', 'Protect society members'];
             } else if (this.hasFlag(GameFlag.SOCIETY_MEMBERS_IDENTIFIED)) {
                 context.trustLevel = 'suspicious';
                 context.behavior = 'defensive';
+                context.goals = ['Avoid suspicion', 'Gather information about investigation'];
+            } else {
+                context.goals = ['Investigate disappearance', 'Maintain order', 'Help newcomers'];
             }
         }
         
         // Dr. Thompson - becomes ally when coercion revealed
-        if (npcName.toLowerCase().includes('thompson')) {
+        if (npcName.toLowerCase().includes('thompson') || npcName.toLowerCase().includes('doctor')) {
             if (this.hasFlag(GameFlag.CAVE_LOCATION_KNOWN)) {
                 context.trustLevel = 'ally';
                 context.behavior = 'helpful';
+                context.goals = ['Reveal truth about coercion', 'Help investigation', 'Protect patients'];
+            } else {
+                context.goals = ['Research unusual symptoms', 'Seek collaboration', 'Maintain medical ethics'];
             }
         }
         

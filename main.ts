@@ -1,7 +1,13 @@
 import { Game, AUTO } from 'phaser';
 import { MainMenuScene } from './src/scenes/MainMenuScene';
 import { TownOverworldScene } from './src/scenes/TownOverworldScene';
-import { TechStationScene } from './src/scenes/TechStationScene';
+import { HospitalScene } from './src/scenes/HospitalScene';
+import { PoliceStationScene } from './src/scenes/PoliceStationScene';
+import { LibraryScene } from './src/scenes/LibraryScene';
+import { TavernScene } from './src/scenes/TavernScene';
+import { SchoolScene } from './src/scenes/SchoolScene';
+import { GroceryStoreScene } from './src/scenes/GroceryStoreScene';
+import { ArtMuseumScene } from './src/scenes/ArtMuseumScene';
 import { SecurityStationScene } from './src/scenes/SecurityStationScene';
 import { ResearchLabScene } from './src/scenes/ResearchLabScene';
 import { MedicalBayScene } from './src/scenes/MedicalBayScene';
@@ -24,7 +30,13 @@ const config = {
     scene: [
         MainMenuScene, 
         TownOverworldScene,
-        TechStationScene, 
+        HospitalScene,
+        PoliceStationScene,
+        LibraryScene,
+        TavernScene,
+        SchoolScene,
+        GroceryStoreScene,
+        ArtMuseumScene,
         SecurityStationScene, 
         ResearchLabScene, 
         MedicalBayScene, 

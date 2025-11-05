@@ -16,6 +16,7 @@ export interface NPCContext {
     availableTools: NPCTool[];
     conversationHistory?: any[];
     currentGoals?: string[];
+    spatialContext?: any;
 }
 
 export class AIService {
@@ -400,6 +401,10 @@ STORY-AWARE BEHAVIOR:
             ? `\nRECENT CONVERSATION:\n${context.conversationHistory.slice(-3).map(msg => 
                 `${msg.name || 'Unknown'}: ${msg.content}`
               ).join('\n')}\n`
+            : '';
+
+        const spatialSection = context.spatialContext 
+            ? `\nSPATIAL AWARENESS:\n- Current Position: (${context.spatialContext.currentPosition.x}, ${context.spatialContext.currentPosition.y})\n- Map Bounds: ${context.spatialContext.mapBounds.width}x${context.spatialContext.mapBounds.height}\n- Known Landmarks: ${context.spatialContext.knownLandmarks.slice(0, 5).map(l => `${l.name} (${l.distance} units away)`).join(', ')}\n- Discovered Characters: ${context.spatialContext.discoveredCharacters.slice(0, 3).map(c => `${c.name} at (${c.x}, ${c.y})`).join(', ') || 'none'}\n- Discovered Objects: ${context.spatialContext.discoveredObjects.slice(0, 3).map(o => `${o.name} at (${o.x}, ${o.y})`).join(', ') || 'none'}\n`
             : '';
 
         return `You are ${context.name}, an NPC in a mystery RPG game.

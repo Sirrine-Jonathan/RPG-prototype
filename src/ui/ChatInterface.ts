@@ -17,18 +17,27 @@ export class ChatInterface {
     private tabsContainer: HTMLDivElement;
     private chatTab: HTMLButtonElement;
     private inventoryTab: HTMLButtonElement;
+    private notesTab: HTMLButtonElement;
     private minimizeButton: HTMLButtonElement;
     private messageArea: HTMLDivElement;
     private inventoryArea: HTMLDivElement;
+    private notesArea: HTMLDivElement;
     private inputArea: HTMLDivElement;
     private textarea: HTMLTextAreaElement;
     private sendButton: HTMLButtonElement;
     private aiService: AIService;
     
     private townMessages: TownMessage[] = [];
-    private activeTab: 'chat' | 'inventory' = 'chat';
+    private activeTab: 'chat' | 'inventory' | 'notes' = 'chat';
     private isMinimized: boolean = false;
     private nearbyNPCs: Set<string> = new Set();
+    private playerNotes: Array<{
+        id: string;
+        content: string;
+        category: string;
+        timestamp: string;
+        location: string;
+    }> = [];
 
     constructor(scene: Scene) {
         if (ChatInterface.instance) {
@@ -46,6 +55,9 @@ export class ChatInterface {
         
         // Listen for object interactions
         this.scene.events.on('town-action', this.onTownAction, this);
+        
+        // Listen for notes from NPCs
+        this.scene.events.on('update-notes', this.onNotesUpdate, this);
         
         ChatInterface.instance = this;
     }
@@ -119,6 +131,18 @@ export class ChatInterface {
         `;
         this.inventoryTab.textContent = 'Inventory';
 
+        this.notesTab = document.createElement('button');
+        this.notesTab.style.cssText = `
+            background: #666;
+            border: none;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        `;
+        this.notesTab.textContent = 'Notes';
+
         this.minimizeButton = document.createElement('button');
         this.minimizeButton.style.cssText = `
             background: none;
@@ -134,6 +158,7 @@ export class ChatInterface {
 
         this.tabsContainer.appendChild(this.chatTab);
         this.tabsContainer.appendChild(this.inventoryTab);
+        this.tabsContainer.appendChild(this.notesTab);
         this.header.appendChild(this.tabsContainer);
         this.header.appendChild(this.minimizeButton);
 
@@ -199,6 +224,15 @@ export class ChatInterface {
             display: none;
         `;
 
+        // Notes area
+        this.notesArea = document.createElement('div');
+        this.notesArea.style.cssText = `
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            display: none;
+        `;
+
         // Assemble UI
         this.inputArea.appendChild(this.textarea);
         this.inputArea.appendChild(this.sendButton);
@@ -206,6 +240,7 @@ export class ChatInterface {
         this.container.appendChild(this.header);
         this.container.appendChild(this.messageArea);
         this.container.appendChild(this.inventoryArea);
+        this.container.appendChild(this.notesArea);
         this.container.appendChild(this.inputArea);
         
         document.body.appendChild(this.container);
@@ -231,6 +266,58 @@ export class ChatInterface {
         
         this.updateTownChat();
         this.updateInventoryArea();
+        this.updateNotesArea();
+    }
+
+    private updateNotesArea() {
+        this.notesArea.innerHTML = '<h3 style="color: white; margin: 0 0 15px 0;">Investigation Notes</h3>';
+        
+        if (this.playerNotes.length === 0) {
+            const noNotes = document.createElement('p');
+            noNotes.style.cssText = 'color: #888; font-style: italic; text-align: center; margin-top: 50px;';
+            noNotes.textContent = 'No notes yet. Chronicle will help you take notes as you investigate.';
+            this.notesArea.appendChild(noNotes);
+            return;
+        }
+        
+        this.playerNotes.forEach(note => {
+            const noteDiv = document.createElement('div');
+            noteDiv.style.cssText = `
+                padding: 12px;
+                margin-bottom: 12px;
+                background: rgba(100, 100, 100, 0.2);
+                border: 1px solid #666;
+                border-radius: 8px;
+                color: white;
+            `;
+            
+            const headerDiv = document.createElement('div');
+            headerDiv.style.cssText = 'display: flex; justify-content: space-between; margin-bottom: 8px;';
+            
+            const categoryDiv = document.createElement('span');
+            categoryDiv.style.cssText = 'font-weight: bold; color: #4a90e2;';
+            categoryDiv.textContent = note.category;
+            
+            const timeDiv = document.createElement('span');
+            timeDiv.style.cssText = 'font-size: 11px; color: #888;';
+            timeDiv.textContent = note.timestamp;
+            
+            headerDiv.appendChild(categoryDiv);
+            headerDiv.appendChild(timeDiv);
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.style.cssText = 'line-height: 1.4; margin-bottom: 4px;';
+            contentDiv.textContent = note.content;
+            
+            const locationDiv = document.createElement('div');
+            locationDiv.style.cssText = 'font-size: 11px; color: #aaa; font-style: italic;';
+            locationDiv.textContent = `Location: ${note.location}`;
+            
+            noteDiv.appendChild(headerDiv);
+            noteDiv.appendChild(contentDiv);
+            noteDiv.appendChild(locationDiv);
+            this.notesArea.appendChild(noteDiv);
+        });
     }
 
     private setupEventListeners() {
@@ -261,6 +348,7 @@ export class ChatInterface {
         // Tab switching
         this.chatTab.addEventListener('click', () => this.switchTab('chat'));
         this.inventoryTab.addEventListener('click', () => this.switchTab('inventory'));
+        this.notesTab.addEventListener('click', () => this.switchTab('notes'));
         
         // Also prevent space key capture on focus
         this.textarea.addEventListener('focus', () => {
@@ -349,6 +437,11 @@ export class ChatInterface {
         });
         
         this.updateTownChat();
+    };
+
+    private onNotesUpdate = (notes: Array<{id: string; content: string; category: string; timestamp: string; location: string}>) => {
+        this.playerNotes = notes;
+        this.updateNotesArea();
     };
 
     private updateTownChat() {
@@ -578,27 +671,31 @@ export class ChatInterface {
         }
     }
 
-    private switchTab(tab: 'chat' | 'inventory') {
+    private switchTab(tab: 'chat' | 'inventory' | 'notes') {
         this.activeTab = tab;
         
-        // Update tab appearance
+        // Reset all tabs
+        this.chatTab.style.background = '#666';
+        this.inventoryTab.style.background = '#666';
+        this.notesTab.style.background = '#666';
+        
+        // Hide all areas
+        this.messageArea.style.display = 'none';
+        this.inventoryArea.style.display = 'none';
+        this.notesArea.style.display = 'none';
+        this.inputArea.style.display = 'none';
+        
         if (tab === 'chat') {
             this.chatTab.style.background = '#4a90e2';
-            this.inventoryTab.style.background = '#666';
-            
-            // Show chat UI
             this.messageArea.style.display = 'flex';
             this.messageArea.style.flexDirection = 'column';
             this.inputArea.style.display = 'block';
-            this.inventoryArea.style.display = 'none';
-        } else {
+        } else if (tab === 'inventory') {
             this.inventoryTab.style.background = '#4a90e2';
-            this.chatTab.style.background = '#666';
-            
-            // Show inventory UI
-            this.messageArea.style.display = 'none';
-            this.inputArea.style.display = 'none';
             this.inventoryArea.style.display = 'block';
+        } else if (tab === 'notes') {
+            this.notesTab.style.background = '#4a90e2';
+            this.notesArea.style.display = 'block';
         }
     }
 

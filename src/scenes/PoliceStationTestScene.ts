@@ -39,7 +39,12 @@ export class PoliceStationTestScene extends Scene {
         // Setup controls
         this.cursors = this.input.keyboard!.createCursorKeys();
         
-        this.add.text(10, 550, 'Use arrow keys to move', {
+        // Add exit door
+        const exitDoor = this.add.rectangle(50, 300, 20, 60, 0x8b4513);
+        exitDoor.setInteractive();
+        exitDoor.on('pointerdown', () => this.exitBuilding());
+        
+        this.add.text(10, 550, 'Use arrow keys to move, click door to exit', {
             fontSize: '14px',
             color: '#bdc3c7'
         });
@@ -55,5 +60,12 @@ export class PoliceStationTestScene extends Scene {
         // Keep player in bounds
         this.player.x = Phaser.Math.Clamp(this.player.x, 8, 792);
         this.player.y = Phaser.Math.Clamp(this.player.y, 8, 592);
+    }
+    
+    private exitBuilding(): void {
+        const returnScene = this.registry.get('returnScene') || 'TownOverworldScene';
+        const returnPosition = this.registry.get('returnPosition') || { x: 1200, y: 900 };
+        
+        this.scene.start(returnScene, { playerPosition: returnPosition });
     }
 }

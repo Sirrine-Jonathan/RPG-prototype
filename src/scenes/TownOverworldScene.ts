@@ -30,12 +30,34 @@ export class TownOverworldScene extends BaseScene {
   public doctor!: SmartNPC;
   public merchant!: SmartNPC;
   public librarian!: SmartNPC;
+  public assistant!: SmartNPC; // Story guide and note-taker
 
   // Interactive objects
   private townObjects: InteractiveObject[] = [];
+  private playerNotes: Array<{
+    id: string;
+    content: string;
+    category: string;
+    timestamp: string;
+    location: string;
+  }> = [];
 
   constructor() {
     super({ key: "TownOverworldScene" });
+  }
+
+  init(data?: { playerPosition?: { x: number, y: number } }): void {
+    // Reset movement state when returning to scene
+    this.isMoving = false;
+    this.currentPath = [];
+    this.pathIndex = 0;
+    this.lastTriggeredBuilding = "";
+    this.triggerCooldown = 0;
+    
+    // Store return position if provided
+    if (data?.playerPosition) {
+      this.registry.set('playerReturnPosition', data.playerPosition);
+    }
   }
 
   preload() {
@@ -149,10 +171,18 @@ export class TownOverworldScene extends BaseScene {
   }
 
   private createPlayer(): void {
-    this.player = this.add.sprite(1200, 900, "adam", 0); // Center of larger map
+    // Check for return position
+    const returnPosition = this.registry.get('playerReturnPosition');
+    const startX = returnPosition?.x || 1200;
+    const startY = returnPosition?.y || 900;
+    
+    this.player = this.add.sprite(startX, startY, "adam", 0);
     this.player.setScale(2);
     this.player.setOrigin(0.5, 0.5);
     this.player.play(`adam_idle_${this.lastDirection}`);
+    
+    // Clear return position
+    this.registry.remove('playerReturnPosition');
     
     // Create proximity visualization circle
     this.proximityCircle = this.add.graphics();
@@ -184,6 +214,13 @@ export class TownOverworldScene extends BaseScene {
       { x: 2100, y: 900, scene: "TavernScene", name: "Tavern" }
     ];
 
+    // Add museum basement entrance if unlocked
+    if (this.gameStateManager.isLocationUnlocked('museum_basement')) {
+      this.buildings.push({
+        x: 1200, y: 350, scene: "MuseumBasementScene", name: "Museum Basement"
+      });
+    }
+
     this.buildings.forEach((building, index) => {
       const buildingFrame = 32 + index;
       const buildingSprite = this.add.sprite(building.x, building.y, "town_tileset", buildingFrame);
@@ -197,21 +234,9 @@ export class TownOverworldScene extends BaseScene {
         padding: { x: 4, y: 2 }
       }).setOrigin(0.5);
 
-      buildingSprite.setInteractive();
-      buildingSprite.on('pointerdown', () => {
-        const distance = Phaser.Math.Distance.Between(
-          this.player.x, this.player.y, building.x, building.y
-        );
-        
-        if (distance < 100) {
-          console.log(`Entering ${building.name}`);
-          if (building.scene === "PoliceStationScene") {
-            this.scene.start("TechStationScene");
-          }
-        } else {
-          console.log(`Too far from ${building.name}`);
-        }
-      });
+      // Create invisible trigger zone around building entrance
+      const triggerZone = this.add.zone(building.x, building.y + 40, 80, 60);
+      triggerZone.setData('building', building);
     });
   }
 
@@ -231,6 +256,15 @@ export class TownOverworldScene extends BaseScene {
     // Listen for story events on the scene instead
     this.events.on('interact', (objectId: string, action: string) => {
       this.handleStoryInteraction(objectId, action);
+    });
+
+    // Listen for notes from the assistant NPC
+    this.events.on('note-taken', (noteEntry: any) => {
+      this.playerNotes.push(noteEntry);
+      console.log(`📝 Note added: ${noteEntry.content}`);
+      
+      // Emit to chat interface for display
+      this.events.emit('update-notes', this.playerNotes);
     });
   }
   
@@ -287,41 +321,35 @@ export class TownOverworldScene extends BaseScene {
       "You are the town librarian and historian who has researched the whispering stones extensively. You have ancient texts that might hold answers but need help interpreting them. You love intellectual discussions and often approach others to share your research.",
       "scholar"
     );
+
+    // Create the assistant - a knowledgeable guide who helps players navigate the story
+    this.assistant = new SmartNPC(
+      this, 1200, 1200, "bob", "Guide",
+      "Wise and observant, knows everyone in town and understands the full scope of the mystery. Helpful and patient, enjoys guiding newcomers and taking detailed notes about important discoveries. Always ready to provide hints and explain how things work.",
+      "You are Guide, the town's unofficial guide and record-keeper. You have observed the entire mystery unfold and know all the key players, locations, and clues. Your role is to help visitors navigate the investigation by providing hints, taking notes of important discoveries, and explaining how to interact with the world. You are knowledgeable about the full story but reveal information gradually to maintain the mystery. You always stay close to the visitor to provide assistance.",
+      "guide"
+    );
     
-    // Set chapter-specific goals
-    if (currentChapter === 1) {
-      this.sheriff.setGoals([
-        "Investigate Maya's disappearance",
-        "Question townspeople about recent strange events",
-        "Maintain order while gathering information"
-      ]);
-    } else if (currentChapter >= 2) {
-      this.sheriff.setGoals([
-        "Hide evidence of the secret society",
-        "Mislead the investigation away from the truth",
-        "Protect society members from exposure"
-      ]);
-    }
+    // Set story-driven goals using GameStateManager
+    const sheriffContext = this.gameStateManager.getNPCContext('Sheriff Martinez');
+    this.sheriff.setGoals(sheriffContext.goals || [
+      "Investigate Maya's disappearance",
+      "Question townspeople about recent strange events", 
+      "Maintain order while gathering information"
+    ]);
+    
+    const doctorContext = this.gameStateManager.getNPCContext('Dr. Thompson');
+    this.doctor.setGoals(doctorContext.goals || [
+      "Investigate unusual patient symptoms",
+      "Research possible connections to the whispering stones",
+      "Seek collaboration on medical mysteries"
+    ]);
     
     this.townsperson.setGoals([
       "Share local gossip and rumors",
       "Learn about the visitor's purpose in town",
       "Discuss the strange happenings around town"
     ]);
-    
-    if (currentChapter >= 4) {
-      this.doctor.setGoals([
-        "Reveal the truth about being coerced by the society",
-        "Help the investigation by sharing medical evidence",
-        "Protect patients from further harm"
-      ]);
-    } else {
-      this.doctor.setGoals([
-        "Investigate unusual patient symptoms",
-        "Research possible connections to the whispering stones",
-        "Seek collaboration on medical mysteries"
-      ]);
-    }
     
     this.merchant.setGoals([
       "Share stories from other towns with similar phenomena",
@@ -335,6 +363,14 @@ export class TownOverworldScene extends BaseScene {
       "Seek help interpreting mysterious symbols and texts"
     ]);
 
+    this.assistant.setGoals([
+      `Guide newcomers to start investigating Maya's disappearance at the hospital (Chapter ${currentChapter})`,
+      "Provide specific, actionable hints about where to go and what to do next",
+      "Take detailed notes about important discoveries and conversations", 
+      "Explain game controls and interaction methods when needed",
+      "Help players understand current story progress and next steps"
+    ]);
+
     // Set up room context
     const playerCharacter = {
       id: "player",
@@ -342,7 +378,7 @@ export class TownOverworldScene extends BaseScene {
       getPosition: () => ({ x: this.player.x, y: this.player.y }),
     };
 
-    const allNPCs = [this.sheriff, this.townsperson, this.doctor, this.merchant, this.librarian];
+    const allNPCs = [this.sheriff, this.townsperson, this.doctor, this.merchant, this.librarian, this.assistant];
     const allCharacters = [playerCharacter, ...allNPCs];
     const grid = Array(50).fill(null).map(() => Array(37).fill(0)); // Larger grid for bigger map
 
@@ -361,6 +397,9 @@ export class TownOverworldScene extends BaseScene {
     const isChatFocused = document.activeElement?.tagName === "TEXTAREA" || 
                          document.activeElement?.tagName === "INPUT" ||
                          document.querySelector('.chat-interface')?.contains(document.activeElement);
+
+    // Update Guide following behavior
+    this.updateGuideFollowing();
 
     if (!isChatFocused && !this.isMoving) {
       const speed = 200;
@@ -427,6 +466,9 @@ export class TownOverworldScene extends BaseScene {
 
     // Check for nearby interactive objects
     this.checkNearbyObjects();
+
+    // Check for building entrance triggers
+    this.checkBuildingTriggers();
 
     // Update proximity and chat
     this.proximityService.updatePlayerPosition(this.player.x, this.player.y);
@@ -508,5 +550,113 @@ export class TownOverworldScene extends BaseScene {
     });
   }
 
-  // Removed movePlayerTo - players use keyboard controls only
+  private lastTriggeredBuilding: string = "";
+  private triggerCooldown: number = 0;
+
+  private checkBuildingTriggers(): void {
+    // Cooldown to prevent rapid re-triggering
+    if (this.triggerCooldown > 0) {
+      this.triggerCooldown -= this.game.loop.delta;
+      return;
+    }
+
+    this.buildings.forEach(building => {
+      const distance = Phaser.Math.Distance.Between(
+        this.player.x, this.player.y, building.x, building.y + 40
+      );
+      
+      if (distance < 40 && this.lastTriggeredBuilding !== building.name) {
+        console.log(`🚪 TRIGGER: Entering ${building.name} from town`);
+        this.lastTriggeredBuilding = building.name;
+        this.triggerCooldown = 2000; // 2 second cooldown
+        this.enterBuilding(building);
+      }
+    });
+
+    // Reset trigger if player moves away from all buildings
+    const nearAnyBuilding = this.buildings.some(building => {
+      const distance = Phaser.Math.Distance.Between(
+        this.player.x, this.player.y, building.x, building.y + 40
+      );
+      return distance < 60;
+    });
+
+    if (!nearAnyBuilding) {
+      this.lastTriggeredBuilding = "";
+    }
+  }
+
+  private enterBuilding(building: {x: number, y: number, scene: string, name: string}): void {
+    // Check story progress for location access
+    const locationKey = building.name.toLowerCase().replace(' ', '_');
+    
+    if (!this.gameStateManager.isLocationUnlocked(locationKey)) {
+      console.log(`🚫 ${building.name} is not accessible yet.`);
+      this.assistant?.speak(`That area isn't accessible yet. You need to progress further in the investigation.`);
+      return;
+    }
+    
+    console.log(`Entering ${building.name}`);
+    
+    // Map building scenes to actual scene keys
+    const sceneMap: {[key: string]: string} = {
+      'PoliceStationScene': 'PoliceStationScene',
+      'HospitalScene': 'HospitalScene', 
+      'SchoolScene': 'SchoolScene',
+      'GroceryStoreScene': 'GroceryStoreScene',
+      'ArtMuseumScene': 'ArtMuseumScene',
+      'LibraryScene': 'LibraryScene',
+      'TavernScene': 'TavernScene'
+    };
+    
+    const actualScene = sceneMap[building.scene] || 'HospitalScene'; // Default to hospital if scene not found
+    
+    // Store return location
+    this.registry.set('returnScene', 'TownOverworldScene');
+    this.registry.set('returnPosition', { x: this.player.x, y: this.player.y });
+    
+    this.scene.start(actualScene);
+  }
+
+  private updateGuideFollowing(): void {
+    if (!this.assistant || !this.player) return;
+
+    const distance = Phaser.Math.Distance.Between(
+      this.player.x, this.player.y,
+      this.assistant.sprite.x, this.assistant.sprite.y
+    );
+
+    // Follow player if distance exceeds 80 units
+    if (distance > 80) {
+      // Calculate position 60 units behind player based on last direction
+      let targetX = this.player.x;
+      let targetY = this.player.y;
+
+      switch (this.lastDirection) {
+        case 'up':
+          targetY += 60;
+          break;
+        case 'down':
+          targetY -= 60;
+          break;
+        case 'left':
+          targetX += 60;
+          break;
+        case 'right':
+          targetX -= 60;
+          break;
+      }
+
+      // Use pathfinding to move Guide to target position
+      const path = this.pathfinding.findPath(
+        this.assistant.sprite.x, this.assistant.sprite.y,
+        targetX, targetY
+      );
+
+      if (path.length > 1) {
+        const nextStep = path[1];
+        this.assistant.moveToPosition(nextStep.x, nextStep.y);
+      }
+    }
+  }
 }

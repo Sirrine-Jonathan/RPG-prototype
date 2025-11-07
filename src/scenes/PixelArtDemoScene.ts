@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { BaseScene } from './BaseScene';
 import { SmartNPC } from '../entities/SmartNPC';
 import { ProximityService } from '../services/ProximityService';

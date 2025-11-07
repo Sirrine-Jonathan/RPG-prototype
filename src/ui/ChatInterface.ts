@@ -11,21 +11,21 @@ interface TownMessage {
 
 export class ChatInterface {
     private static instance: ChatInterface;
-    private scene: Scene;
-    private container: HTMLDivElement;
-    private header: HTMLDivElement;
-    private tabsContainer: HTMLDivElement;
-    private chatTab: HTMLButtonElement;
-    private inventoryTab: HTMLButtonElement;
-    private notesTab: HTMLButtonElement;
-    private minimizeButton: HTMLButtonElement;
-    private messageArea: HTMLDivElement;
-    private inventoryArea: HTMLDivElement;
-    private notesArea: HTMLDivElement;
-    private inputArea: HTMLDivElement;
-    private textarea: HTMLTextAreaElement;
-    private sendButton: HTMLButtonElement;
-    private aiService: AIService;
+    private scene!: Scene;
+    private container!: HTMLDivElement;
+    private header!: HTMLDivElement;
+    private tabsContainer!: HTMLDivElement;
+    private chatTab!: HTMLButtonElement;
+    private inventoryTab!: HTMLButtonElement;
+    private notesTab!: HTMLButtonElement;
+    private minimizeButton!: HTMLButtonElement;
+    private messageArea!: HTMLDivElement;
+    private inventoryArea!: HTMLDivElement;
+    private notesArea!: HTMLDivElement;
+    private inputArea!: HTMLDivElement;
+    private textarea!: HTMLTextAreaElement;
+    private sendButton!: HTMLButtonElement;
+    private _aiService!: AIService;
     
     private townMessages: TownMessage[] = [];
     private activeTab: 'chat' | 'inventory' | 'notes' = 'chat';
@@ -46,7 +46,7 @@ export class ChatInterface {
         }
         
         this.scene = scene;
-        this.aiService = AIService.getInstance();
+        this._aiService = AIService.getInstance();
         this.createUI();
         this.setupEventListeners();
         

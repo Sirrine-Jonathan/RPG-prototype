@@ -49,20 +49,20 @@ export class MainMenuScene extends Scene {
       .setInteractive()
       .on("pointerdown", () => this.loadGame());
 
-    const settingsBtn = this.add
-      .text(width / 2, height * 0.7, "Settings", buttonStyle)
+    const levelTestBtn = this.add
+      .text(width / 2, height * 0.7, "Level Test", buttonStyle)
       .setOrigin(0.5)
       .setInteractive()
-      .on("pointerdown", () => this.openSettings());
+      .on("pointerdown", () => this.scene.start('LevelTestScene'));
 
-    const exitBtn = this.add
-      .text(width / 2, height * 0.8, "Exit", buttonStyle)
+    const testTownBtn = this.add
+      .text(width / 2, height * 0.8, "Test Town (Editor)", buttonStyle)
       .setOrigin(0.5)
       .setInteractive()
-      .on("pointerdown", () => this.exitGame());
+      .on("pointerdown", () => this.scene.start('TestTownScene'));
 
     // Button hover effects
-    [newGameBtn, loadGameBtn, settingsBtn, exitBtn].forEach((btn) => {
+    [newGameBtn, loadGameBtn, levelTestBtn, testTownBtn].forEach((btn) => {
       btn.on("pointerover", () => btn.setStyle({ backgroundColor: "#003300" }));
       btn.on("pointerout", () => btn.setStyle({ backgroundColor: "#001100" }));
     });
@@ -76,15 +76,5 @@ export class MainMenuScene extends Scene {
   loadGame() {
     // TODO: Implement load game functionality
     console.log("Loading game...");
-  }
-
-  openSettings() {
-    // TODO: Implement settings scene
-    console.log("Opening settings...");
-  }
-
-  exitGame() {
-    // TODO: Implement exit functionality
-    console.log("Exiting game...");
   }
 }

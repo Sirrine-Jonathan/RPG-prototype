@@ -155,7 +155,7 @@ export class BaseScene extends Scene {
         const zoomOutKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.MINUS);
         
         // Also support = key for zoom in (no shift needed)
-        const zoomInKey2 = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.EQUALS);
+        const zoomInKey2 = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.PLUS);
         
         zoomInKey?.on('down', () => {
             const camera = this.cameras.main;

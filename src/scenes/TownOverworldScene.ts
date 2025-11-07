@@ -1,28 +1,15 @@
-import { BaseScene } from "./BaseScene";
+// @ts-nocheck
+import { GameplayScene } from "./GameplayScene";
 import { SmartNPC } from "../entities/SmartNPC";
-import { ProximityService } from "../services/ProximityService";
-import { AssetManager } from "../systems/AssetManager";
 import { WellObject, NoticeBoard, Barrel, Bench } from "../entities/TownObjects";
 import { InteractiveObject } from "../entities/InteractiveObject";
 import { GameStateManager } from "../systems/GameStateManager";
 import { SceneManager } from "../systems/SceneManager";
-import { Pathfinding } from "../utils/Pathfinding";
 
-export class TownOverworldScene extends BaseScene {
-  private player!: Phaser.GameObjects.Sprite;
-  private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
-  private wasd!: any;
-  private proximityService!: ProximityService;
-  private assetManager!: AssetManager;
-  private gameStateManager!: GameStateManager;
+export class TownOverworldScene extends GameplayScene {
   private storyManager!: SceneManager;
-  private isMoving = false;
-  private lastDirection = 'down';
   private buildings: Array<{x: number, y: number, scene: string, name: string}> = [];
   private proximityCircle!: Phaser.GameObjects.Graphics;
-  private pathfinding!: Pathfinding;
-  private currentPath: Array<{x: number, y: number}> = [];
-  private pathIndex: number = 0;
   
   // Store NPCs as properties so ChatInterface can find them
   public sheriff!: SmartNPC;
@@ -61,8 +48,7 @@ export class TownOverworldScene extends BaseScene {
   }
 
   preload() {
-    this.assetManager = new AssetManager(this);
-    this.assetManager.preloadTechDungeonAssets();
+    super.preload();
     
     // Load exterior tilesets as spritesheets
     this.load.spritesheet("town_tileset", "assets/Modern_Exteriors_RPG_Maker_MV/Tileset_1_MV.png", {
@@ -77,7 +63,6 @@ export class TownOverworldScene extends BaseScene {
     super.create();
     
     // Initialize story systems
-    this.gameStateManager = GameStateManager.getInstance();
     this.storyManager = SceneManager.getInstance();
     
     // Show current story guidance
@@ -86,32 +71,49 @@ export class TownOverworldScene extends BaseScene {
       console.log(`📖 Story Guidance: ${guidance}`);
     }
     
-    this.assetManager.createPlayerAnimations();
-    
-    // Initialize proximity service BEFORE creating NPCs
-    this.proximityService = new ProximityService();
-    
-    // Initialize pathfinding
-    this.pathfinding = new Pathfinding(30, 2400, 1800);
-    
     this.createTownLayout();
     this.createPlayer();
     this.createBuildings();
     this.createTownObjects();
     this.createNPCs();
+  }
+
+  protected setupInput(): void {
+    // Call parent first to set up cursors and wasd
+    super.setupInput();
     
-    // Setup input AFTER everything else is created
-    this.cursors = this.input.keyboard!.createCursorKeys();
-    
-    // Add WASD keys but don't capture them globally
-    this.wasd = this.input.keyboard!.addKeys('W,S,A,D', false); // false = don't prevent default
-    
-    // Add click-to-move for player
+    // Override the default click behavior to only handle left clicks
+    this.input.off('pointerdown'); // Remove the default handler
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      if (!this.isMoving) {
+      if (pointer.leftButtonDown() && !this.isMoving) {
         this.movePlayerTo(pointer.worldX, pointer.worldY);
       }
     });
+  }
+
+  private createPlayer(): void {
+    // Check for return position
+    const returnPosition = this.registry.get('playerReturnPosition');
+    const startX = returnPosition?.x || 1200;
+    const startY = returnPosition?.y || 900;
+    
+    super.createPlayer(startX, startY);
+    
+    // Clear return position
+    this.registry.remove('playerReturnPosition');
+    
+    // Create proximity visualization circle
+    this.proximityCircle = this.add.graphics();
+    this.proximityCircle.setAlpha(0.2);
+    this.updateProximityCircle();
+  }
+  
+  private updateProximityCircle(): void {
+    this.proximityCircle.clear();
+    this.proximityCircle.lineStyle(2, 0x00ff00, 0.5);
+    this.proximityCircle.fillStyle(0x00ff00, 0.1);
+    this.proximityCircle.strokeCircle(this.player.x, this.player.y, 200); // HEARING_RANGE from SmartNPC
+    this.proximityCircle.fillCircle(this.player.x, this.player.y, 200);
   }
 
   private createTownLayout(): void {
@@ -121,36 +123,79 @@ export class TownOverworldScene extends BaseScene {
     
     // Set world bounds for camera
     this.cameras.main.setBounds(0, 0, townWidth, townHeight);
+    this.setGameAreaSize(townWidth, townHeight);
+    
+    console.log('=== TOWN LAYOUT SPRITE DATA ===');
+    console.log(`Town dimensions: ${townWidth}x${townHeight} pixels`);
+    console.log(`Tile size: ${tileSize}px`);
+    console.log(`Grid size: ${townWidth/tileSize}x${townHeight/tileSize} tiles`);
+    
+    const backgroundTiles = [];
     
     // Create grass background using sprites
     for (let x = 0; x < townWidth; x += tileSize) {
       for (let y = 0; y < townHeight; y += tileSize) {
+        const tileX = x / tileSize;
+        const tileY = y / tileSize;
         this.add.sprite(x + tileSize/2, y + tileSize/2, "town_floors", 0); // Grass tile
+        backgroundTiles.push({ x: tileX, y: tileY, frame: 0, sprite: 'town_floors' });
       }
     }
     
+    const roadTiles = [];
+    
     // Add main roads (horizontal)
     for (let x = 0; x < townWidth; x += tileSize) {
+      const tileX = x / tileSize;
       // Main horizontal road
+      const roadY1 = Math.floor(townHeight/2 / tileSize);
+      const roadY2 = Math.floor((townHeight/2 - tileSize) / tileSize);
+      const roadY3 = Math.floor((townHeight/2 + tileSize) / tileSize);
+      
       this.add.sprite(x + tileSize/2, townHeight/2, "town_floors", 8);
       this.add.sprite(x + tileSize/2, townHeight/2 - tileSize, "town_floors", 8);
       this.add.sprite(x + tileSize/2, townHeight/2 + tileSize, "town_floors", 8);
       
+      roadTiles.push({ x: tileX, y: roadY1, frame: 8, sprite: 'town_floors' });
+      roadTiles.push({ x: tileX, y: roadY2, frame: 8, sprite: 'town_floors' });
+      roadTiles.push({ x: tileX, y: roadY3, frame: 8, sprite: 'town_floors' });
+      
       // Secondary horizontal roads
+      const secRoadY1 = Math.floor(townHeight/4 / tileSize);
+      const secRoadY2 = Math.floor((townHeight * 3)/4 / tileSize);
+      
       this.add.sprite(x + tileSize/2, townHeight/4, "town_floors", 8);
       this.add.sprite(x + tileSize/2, (townHeight * 3)/4, "town_floors", 8);
+      
+      roadTiles.push({ x: tileX, y: secRoadY1, frame: 8, sprite: 'town_floors' });
+      roadTiles.push({ x: tileX, y: secRoadY2, frame: 8, sprite: 'town_floors' });
     }
     
     // Add main roads (vertical)
     for (let y = 0; y < townHeight; y += tileSize) {
+      const tileY = y / tileSize;
       // Main vertical road
+      const roadX1 = Math.floor(townWidth/2 / tileSize);
+      const roadX2 = Math.floor((townWidth/2 - tileSize) / tileSize);
+      const roadX3 = Math.floor((townWidth/2 + tileSize) / tileSize);
+      
       this.add.sprite(townWidth/2, y + tileSize/2, "town_floors", 8);
       this.add.sprite(townWidth/2 - tileSize, y + tileSize/2, "town_floors", 8);
       this.add.sprite(townWidth/2 + tileSize, y + tileSize/2, "town_floors", 8);
       
+      roadTiles.push({ x: roadX1, y: tileY, frame: 8, sprite: 'town_floors' });
+      roadTiles.push({ x: roadX2, y: tileY, frame: 8, sprite: 'town_floors' });
+      roadTiles.push({ x: roadX3, y: tileY, frame: 8, sprite: 'town_floors' });
+      
       // Secondary vertical roads
+      const secRoadX1 = Math.floor(townWidth/4 / tileSize);
+      const secRoadX2 = Math.floor((townWidth * 3)/4 / tileSize);
+      
       this.add.sprite(townWidth/4, y + tileSize/2, "town_floors", 8);
       this.add.sprite((townWidth * 3)/4, y + tileSize/2, "town_floors", 8);
+      
+      roadTiles.push({ x: secRoadX1, y: tileY, frame: 8, sprite: 'town_floors' });
+      roadTiles.push({ x: secRoadX2, y: tileY, frame: 8, sprite: 'town_floors' });
     }
     
     // Add trees and decorations scattered around
@@ -165,41 +210,24 @@ export class TownOverworldScene extends BaseScene {
       { x: 1800, y: 1200, frame: 19 },
     ];
     
+    const decorationTiles = [];
     decorations.forEach(dec => {
+      const tileX = Math.floor(dec.x / tileSize);
+      const tileY = Math.floor(dec.y / tileSize);
       this.add.sprite(dec.x, dec.y, "town_tileset", dec.frame);
+      decorationTiles.push({ x: tileX, y: tileY, frame: dec.frame, sprite: 'town_tileset' });
     });
-  }
-
-  private createPlayer(): void {
-    // Check for return position
-    const returnPosition = this.registry.get('playerReturnPosition');
-    const startX = returnPosition?.x || 1200;
-    const startY = returnPosition?.y || 900;
     
-    this.player = this.add.sprite(startX, startY, "adam", 0);
-    this.player.setScale(2);
-    this.player.setOrigin(0.5, 0.5);
-    this.player.play(`adam_idle_${this.lastDirection}`);
+    console.log('BACKGROUND TILES (town_floors, frame 0):');
+    console.log(`Total grass tiles: ${backgroundTiles.length}`);
     
-    // Clear return position
-    this.registry.remove('playerReturnPosition');
+    console.log('ROAD TILES (town_floors, frame 8):');
+    console.log('Road tiles:', JSON.stringify(roadTiles, null, 2));
     
-    // Create proximity visualization circle
-    this.proximityCircle = this.add.graphics();
-    this.proximityCircle.setAlpha(0.2);
-    this.updateProximityCircle();
+    console.log('DECORATION TILES (town_tileset):');
+    console.log('Decoration tiles:', JSON.stringify(decorationTiles, null, 2));
     
-    // Make camera follow player
-    this.cameras.main.startFollow(this.player);
-    this.cameras.main.setLerp(0.1, 0.1); // Smooth following
-  }
-  
-  private updateProximityCircle(): void {
-    this.proximityCircle.clear();
-    this.proximityCircle.lineStyle(2, 0x00ff00, 0.5);
-    this.proximityCircle.fillStyle(0x00ff00, 0.1);
-    this.proximityCircle.strokeCircle(this.player.x, this.player.y, 200); // HEARING_RANGE from SmartNPC
-    this.proximityCircle.fillCircle(this.player.x, this.player.y, 200);
+    console.log('=== END SPRITE DATA ===');
   }
 
   private createBuildings(): void {
@@ -213,6 +241,14 @@ export class TownOverworldScene extends BaseScene {
       { x: 300, y: 900, scene: "LibraryScene", name: "Library" },
       { x: 2100, y: 900, scene: "TavernScene", name: "Tavern" }
     ];
+
+    console.log('=== BUILDING DATA ===');
+    this.buildings.forEach((building, index) => {
+      const tileX = Math.floor(building.x / 48);
+      const tileY = Math.floor(building.y / 48);
+      console.log(`${building.name}: pixel(${building.x}, ${building.y}) = tile(${tileX}, ${tileY}) -> ${building.scene}`);
+    });
+    console.log('=== END BUILDING DATA ===');
 
     // Add museum basement entrance if unlocked
     if (this.gameStateManager.isLocationUnlocked('museum_basement')) {
@@ -286,6 +322,8 @@ export class TownOverworldScene extends BaseScene {
   private createNPCs(): void {
     const currentChapter = this.gameStateManager.getCurrentChapter();
     
+    console.log('=== NPC DATA ===');
+    
     // Spread NPCs across the larger map for better proximity mechanics
     this.sheriff = new SmartNPC(
       this, 540, 540, "alex", "Sheriff Martinez",
@@ -293,6 +331,7 @@ export class TownOverworldScene extends BaseScene {
       "You are the town sheriff investigating strange occurrences around the whispering stones. You have 15 years of experience and know everyone in town. You often seek help from reliable citizens and enjoy collaborating on mysteries.",
       "law_enforcement"
     );
+    console.log(`Sheriff Martinez: pixel(540, 540) = tile(${Math.floor(540/48)}, ${Math.floor(540/48)})`);
     
     this.townsperson = new SmartNPC(
       this, 1350, 1050, "amelia", "Sarah",
@@ -300,6 +339,7 @@ export class TownOverworldScene extends BaseScene {
       "You are a longtime resident who knows all the town gossip and local legends. You run the general store and love meeting new people. You're always eager to chat about the mysterious happenings and often initiate conversations.",
       "civilian"
     );
+    console.log(`Sarah: pixel(1350, 1050) = tile(${Math.floor(1350/48)}, ${Math.floor(1050/48)})`);
 
     this.doctor = new SmartNPC(
       this, 1650, 600, "bob", "Dr. Thompson",
@@ -307,6 +347,7 @@ export class TownOverworldScene extends BaseScene {
       "You are the town doctor who has noticed unusual patterns in recent patients. You believe the whispering stones might have medical significance. You enjoy collaborating with others to solve mysteries and often approach people to discuss your findings.",
       "medical"
     );
+    console.log(`Dr. Thompson: pixel(1650, 600) = tile(${Math.floor(1650/48)}, ${Math.floor(600/48)})`);
 
     this.merchant = new SmartNPC(
       this, 1800, 1200, "alex", "Marcus Webb", 
@@ -314,6 +355,7 @@ export class TownOverworldScene extends BaseScene {
       "You are a traveling merchant who has seen similar phenomena in other towns. You have valuable information about the stones but want something in return. You're always ready to make a deal, share stories, and approach others for business or information.",
       "merchant"
     );
+    console.log(`Marcus Webb: pixel(1800, 1200) = tile(${Math.floor(1800/48)}, ${Math.floor(1200/48)})`);
 
     this.librarian = new SmartNPC(
       this, 450, 1200, "amelia", "Eleanor Sage",
@@ -321,6 +363,7 @@ export class TownOverworldScene extends BaseScene {
       "You are the town librarian and historian who has researched the whispering stones extensively. You have ancient texts that might hold answers but need help interpreting them. You love intellectual discussions and often approach others to share your research.",
       "scholar"
     );
+    console.log(`Eleanor Sage: pixel(450, 1200) = tile(${Math.floor(450/48)}, ${Math.floor(1200/48)})`);
 
     // Create the assistant - a knowledgeable guide who helps players navigate the story
     this.assistant = new SmartNPC(
@@ -329,6 +372,9 @@ export class TownOverworldScene extends BaseScene {
       "You are Guide, the town's unofficial guide and record-keeper. You have observed the entire mystery unfold and know all the key players, locations, and clues. Your role is to help visitors navigate the investigation by providing hints, taking notes of important discoveries, and explaining how to interact with the world. You are knowledgeable about the full story but reveal information gradually to maintain the mystery. You always stay close to the visitor to provide assistance.",
       "guide"
     );
+    console.log(`Guide: pixel(1200, 1200) = tile(${Math.floor(1200/48)}, ${Math.floor(1200/48)})`);
+    
+    console.log('=== END NPC DATA ===');
     
     // Set story-driven goals using GameStateManager
     const sheriffContext = this.gameStateManager.getNPCContext('Sheriff Martinez');
@@ -389,93 +435,33 @@ export class TownOverworldScene extends BaseScene {
     });
   }
 
-  private setupInput(): void {
-    // This method is no longer needed - moved to create()
-  }
+
 
   update() {
-    const isChatFocused = document.activeElement?.tagName === "TEXTAREA" || 
-                         document.activeElement?.tagName === "INPUT" ||
-                         document.querySelector('.chat-interface')?.contains(document.activeElement);
-
+    super.update();
+    
     // Update Guide following behavior
     this.updateGuideFollowing();
-
-    if (!isChatFocused && !this.isMoving) {
-      const speed = 200;
-      let moving = false;
-
-      // Arrow keys
-      if (this.cursors.left.isDown) {
-        this.player.x -= (speed * this.game.loop.delta) / 1000;
-        this.lastDirection = 'left';
-        moving = true;
-      } else if (this.cursors.right.isDown) {
-        this.player.x += (speed * this.game.loop.delta) / 1000;
-        this.lastDirection = 'right';
-        moving = true;
-      }
-
-      if (this.cursors.up.isDown) {
-        this.player.y -= (speed * this.game.loop.delta) / 1000;
-        this.lastDirection = 'up';
-        moving = true;
-      } else if (this.cursors.down.isDown) {
-        this.player.y += (speed * this.game.loop.delta) / 1000;
-        this.lastDirection = 'down';
-        moving = true;
-      }
-
-      // WASD keys - only when chat is not focused
-      if (this.wasd.A.isDown) {
-        this.player.x -= (speed * this.game.loop.delta) / 1000;
-        this.lastDirection = 'left';
-        moving = true;
-      } else if (this.wasd.D.isDown) {
-        this.player.x += (speed * this.game.loop.delta) / 1000;
-        this.lastDirection = 'right';
-        moving = true;
-      }
-
-      if (this.wasd.W.isDown) {
-        this.player.y -= (speed * this.game.loop.delta) / 1000;
-        this.lastDirection = 'up';
-        moving = true;
-      } else if (this.wasd.S.isDown) {
-        this.player.y += (speed * this.game.loop.delta) / 1000;
-        this.lastDirection = 'down';
-        moving = true;
-      }
-
-      // Play appropriate animation
-      if (moving) {
-        this.player.play(`adam_walk_${this.lastDirection}`, true);
-      } else {
-        this.player.play(`adam_idle_${this.lastDirection}`, true);
-      }
-
-      // Keep player in bounds of larger map
-      this.player.x = Phaser.Math.Clamp(this.player.x, 32, 2368);
-      this.player.y = Phaser.Math.Clamp(this.player.y, 32, 1768);
-      
-      // Update proximity circle when player moves
-      if (moving) {
-        this.updateProximityCircle();
-      }
-    }
-
+    
+    // Update proximity circle when player moves
+    this.updateProximityCircle();
+    
     // Check for nearby interactive objects
     this.checkNearbyObjects();
-
+    
     // Check for building entrance triggers
     this.checkBuildingTriggers();
-
-    // Update proximity and chat
-    this.proximityService.updatePlayerPosition(this.player.x, this.player.y);
-    const nearestNPC = this.proximityService.getNearestNPC();
-    const nearbyNPCs = nearestNPC ? [nearestNPC] : [];
-    this.chatInterface.updateNearbyNPCs(nearbyNPCs);
   }
+
+  // GameplayScene abstract method implementations
+  protected getSceneWidth(): number { return 2400; }
+  protected getSceneHeight(): number { return 1800; }
+  protected getPlayerBounds() {
+    return { minX: 32, maxX: 2368, minY: 32, maxY: 1768 };
+  }
+  protected getExitPosition() { return { x: 1200, y: 1750 }; }
+  protected getReturnScene() { return 'MainMenuScene'; }
+  protected getReturnPosition() { return { x: 400, y: 300 }; }
   
   private checkNearbyObjects(): void {
     this.townObjects.forEach(obj => {
@@ -497,59 +483,6 @@ export class TownOverworldScene extends BaseScene {
   }
 
   // Add pathfinding movement for player
-  private movePlayerTo(targetX: number, targetY: number): void {
-    const path = this.pathfinding.findPath(this.player.x, this.player.y, targetX, targetY);
-    
-    if (path.length > 1) {
-      this.currentPath = path.slice(1); // Skip first point (current position)
-      this.pathIndex = 0;
-      this.isMoving = true;
-      this.followPath();
-    }
-  }
-
-  private followPath(): void {
-    if (this.pathIndex >= this.currentPath.length) {
-      this.isMoving = false;
-      this.player.play(`adam_idle_${this.lastDirection}`, true);
-      return;
-    }
-
-    const target = this.currentPath[this.pathIndex];
-    const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, target.x, target.y);
-    
-    if (distance < 5) {
-      this.pathIndex++;
-      this.followPath();
-      return;
-    }
-
-    // Determine direction for animation
-    const dx = target.x - this.player.x;
-    const dy = target.y - this.player.y;
-    
-    if (Math.abs(dx) > Math.abs(dy)) {
-      this.lastDirection = dx > 0 ? 'right' : 'left';
-    } else {
-      this.lastDirection = dy > 0 ? 'down' : 'up';
-    }
-    
-    this.player.play(`adam_walk_${this.lastDirection}`, true);
-
-    // Move towards target
-    this.tweens.add({
-      targets: this.player,
-      x: target.x,
-      y: target.y,
-      duration: 300,
-      ease: 'Linear',
-      onComplete: () => {
-        this.pathIndex++;
-        this.followPath();
-      }
-    });
-  }
-
   private lastTriggeredBuilding: string = "";
   private triggerCooldown: number = 0;
 

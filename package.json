@@ -3,23 +3,28 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/startup-info.js --editor && concurrently -n \"APP,OLLAMA,EDITOR\" -c \"cyan,yellow,green\" \"npm run dev:app\" \"npm run dev:ollama\" \"npm run dev:editor\"",
+    "start": "node scripts/startup-info.js && concurrently -n \"APP,OLLAMA\" -c \"cyan,yellow\" \"npm run dev:app\" \"npm run dev:ollama\"",
+    "dev:app": "vite",
+    "dev:ollama": "ollama serve",
+    "dev:editor": "cd sandbox/level-editor && npm install --silent && npm start",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest",
     "test:ui": "vitest --ui"
   },
   "dependencies": {
-    "phaser": "^3.70.0",
+    "@ai-sdk/openai": "^0.0.24",
     "ai": "^3.0.0",
-    "@ai-sdk/openai": "^0.0.24"
+    "phaser": "^3.70.0"
   },
   "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@vitest/ui": "^1.0.0",
+    "concurrently": "^8.2.2",
+    "dotenv": "^16.0.0",
     "typescript": "^5.0.0",
     "vite": "^5.0.0",
-    "@types/node": "^20.0.0",
-    "dotenv": "^16.0.0",
-    "vitest": "^1.0.0",
-    "@vitest/ui": "^1.0.0"
+    "vitest": "^1.0.0"
   }
 }

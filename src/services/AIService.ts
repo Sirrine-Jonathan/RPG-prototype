@@ -313,6 +313,9 @@ Respond as ${context.name} (speech only, no actions):`;
             let eventContext = '';
             
             switch (eventType) {
+                case 'player_proximity':
+                    eventContext = `A visitor has approached you and is now nearby (${eventData.distance} units away). This is your chance to greet them or react to their presence.`;
+                    break;
                 case 'speech_heard':
                     eventContext = `You just heard ${eventData.speaker} say: "${eventData.message}"`;
                     break;
@@ -328,13 +331,7 @@ Respond as ${context.name} (speech only, no actions):`;
             const systemPrompt = this.buildNPCSystemPrompt(context);
             const eventPrompt = `${eventContext}
 
-React to this event using any of your available tools. You can:
-- Use "speak" to respond verbally
-- Use movement tools to approach or investigate
-- Use interaction tools with nearby objects
-- Or any other available action that makes sense
-
-Choose the most appropriate response for your character.`;
+React to this situation naturally as your character would.`;
 
             console.log(`📝 Event Prompt for ${context.name}: "${eventPrompt}"`);
 

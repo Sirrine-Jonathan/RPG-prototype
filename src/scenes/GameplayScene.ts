@@ -6,6 +6,7 @@ import { Pathfinding } from "../utils/Pathfinding";
 
 export abstract class GameplayScene extends BaseScene {
   protected player!: Phaser.GameObjects.Sprite;
+  protected playerProximityIndicator!: Phaser.GameObjects.Graphics;
   protected cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   protected wasd!: any;
   protected proximityService!: ProximityService;
@@ -16,6 +17,11 @@ export abstract class GameplayScene extends BaseScene {
   protected lastDirection = 'down';
   protected currentPath: Array<{x: number, y: number}> = [];
   protected pathIndex: number = 0;
+  
+  // Camera panning state
+  protected isPanning = false;
+  protected lastPanX = 0;
+  protected lastPanY = 0;
 
   constructor(config: Phaser.Types.Scenes.SettingsConfig) {
     super(config);
@@ -31,20 +37,49 @@ export abstract class GameplayScene extends BaseScene {
     
     this.gameStateManager = GameStateManager.getInstance();
     this.assetManager.createPlayerAnimations();
-    this.proximityService = new ProximityService();
+    this.proximityService = new ProximityService(this);
     this.pathfinding = new Pathfinding(30, this.getSceneWidth(), this.getSceneHeight());
     
     this.setupInput();
+    this.setupProximityEvents();
   }
 
   protected setupInput(): void {
     this.cursors = this.input.keyboard!.createCursorKeys();
     this.wasd = this.input.keyboard!.addKeys('W,S,A,D', false);
     
-    // Add click-to-move
+    // Add click-to-move (left click only)
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      if (!this.isMoving) {
+      if (pointer.leftButtonDown() && !this.isMoving) {
         this.movePlayerTo(pointer.worldX, pointer.worldY);
+      } else if (pointer.rightButtonDown()) {
+        // Start camera panning
+        this.isPanning = true;
+        this.lastPanX = pointer.x;
+        this.lastPanY = pointer.y;
+        this.cameras.main.stopFollow();
+      }
+    });
+    
+    // Handle camera panning
+    this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+      if (this.isPanning && pointer.rightButtonDown()) {
+        const deltaX = this.lastPanX - pointer.x;
+        const deltaY = this.lastPanY - pointer.y;
+        
+        this.cameras.main.scrollX += deltaX;
+        this.cameras.main.scrollY += deltaY;
+        
+        this.lastPanX = pointer.x;
+        this.lastPanY = pointer.y;
+      }
+    });
+    
+    // Stop panning on mouse up
+    this.input.on('pointerup', (pointer: Phaser.Input.Pointer) => {
+      if (this.isPanning) {
+        this.isPanning = false;
+        // Don't resume following immediately - let player movement handle it
       }
     });
   }
@@ -54,6 +89,11 @@ export abstract class GameplayScene extends BaseScene {
     this.player.setScale(2);
     this.player.setOrigin(0.5, 0.5);
     this.player.play(`adam_idle_${this.lastDirection}`);
+    
+    // Create player proximity indicator
+    this.playerProximityIndicator = this.add.graphics();
+    this.playerProximityIndicator.setAlpha(0.2);
+    this.updatePlayerProximityIndicator();
     
     this.cameras.main.startFollow(this.player);
   }
@@ -65,8 +105,26 @@ export abstract class GameplayScene extends BaseScene {
       this.currentPath = path.slice(1);
       this.pathIndex = 0;
       this.isMoving = true;
+      // Smoothly transition camera back to player
+      this.smoothFollowPlayer();
       this.followPath();
     }
+  }
+
+  protected smoothFollowPlayer(): void {
+    if (this.cameras.main.followTarget) return; // Already following
+    
+    // Smoothly pan camera to player position, then start following
+    this.tweens.add({
+      targets: this.cameras.main,
+      scrollX: this.player.x - this.cameras.main.width / 2,
+      scrollY: this.player.y - this.cameras.main.height / 2,
+      duration: 800,
+      ease: 'Power2',
+      onComplete: () => {
+        this.cameras.main.startFollow(this.player);
+      }
+    });
   }
 
   protected followPath(): void {
@@ -116,10 +174,21 @@ export abstract class GameplayScene extends BaseScene {
     this.updateNPCs();
   }
 
+  protected setupProximityEvents(): void {
+    this.events.on('npc-proximity-enter', (data: { npc: any, distance: number }) => {
+      data.npc.onPlayerProximityEnter(data.distance);
+    });
+    
+    this.events.on('npc-proximity-exit', (data: { npc: any, distance: number }) => {
+      data.npc.onPlayerProximityExit(data.distance);
+    });
+  }
+
   protected updateNPCs(): void {
-    // Update all NPCs in the proximity service
-    if (this.proximityService && (this.proximityService as any).npcs) {
-      (this.proximityService as any).npcs.forEach((npc: any) => {
+    // Just update NPC logic, proximity is handled by events
+    if (this.proximityService) {
+      const allNPCs = this.proximityService.getAllNPCs();
+      allNPCs.forEach((npc: any) => {
         if (npc.update) {
           npc.update();
         }
@@ -131,7 +200,7 @@ export abstract class GameplayScene extends BaseScene {
     const isChatFocused = document.activeElement?.tagName === "TEXTAREA" || 
                          document.activeElement?.tagName === "INPUT";
 
-    if (!isChatFocused && !this.isMoving && this.player) {
+    if (!isChatFocused && !this.isMoving && this.player && this.cursors && this.wasd) {
       const speed = 200;
       let moving = false;
 
@@ -157,6 +226,10 @@ export abstract class GameplayScene extends BaseScene {
 
       if (moving) {
         this.player.play(`adam_walk_${this.lastDirection}`, true);
+        // Smoothly transition camera back to player when moving with keyboard
+        if (!this.cameras.main.followTarget) {
+          this.smoothFollowPlayer();
+        }
       } else {
         this.player.play(`adam_idle_${this.lastDirection}`, true);
       }
@@ -168,11 +241,40 @@ export abstract class GameplayScene extends BaseScene {
     }
   }
 
+  protected updatePlayerProximityIndicator(): void {
+    if (!this.playerProximityIndicator || !this.player) return;
+    
+    this.playerProximityIndicator.clear();
+    this.playerProximityIndicator.lineStyle(2, 0x0088ff, 0.6);
+    this.playerProximityIndicator.strokeCircle(this.player.x, this.player.y, this.proximityService.getRange());
+  }
+
   protected updateProximity(): void {
     this.proximityService.updatePlayerPosition(this.player.x, this.player.y);
-    const nearestNPC = this.proximityService.getNearestNPC();
-    const nearbyNPCs = nearestNPC ? [nearestNPC] : [];
+    this.updatePlayerProximityIndicator();
+    const nearbyNPCs = this.proximityService.getNearbyNPCs();
     this.chatInterface.updateNearbyNPCs(nearbyNPCs);
+  }
+
+  protected setupNPCRoomContext(): void {
+    // Create player character object for NPCs to reference
+    const playerCharacter = {
+      id: "player",
+      name: "Visitor", 
+      getPosition: () => ({ x: this.player.x, y: this.player.y })
+    };
+
+    // Get all NPCs from proximity service
+    const allNPCs = this.proximityService.getAllNPCs();
+    const allCharacters = [playerCharacter, ...allNPCs];
+    const grid = Array(Math.ceil(this.getSceneWidth() / 48)).fill(null)
+      .map(() => Array(Math.ceil(this.getSceneHeight() / 48)).fill(0));
+
+    // Set room context for each NPC
+    allNPCs.forEach(npc => {
+      const otherCharacters = allCharacters.filter(char => char !== npc);
+      npc.setRoomContext([], otherCharacters, grid); // Empty objects array for now
+    });
   }
 
   // Abstract methods for scene-specific configuration

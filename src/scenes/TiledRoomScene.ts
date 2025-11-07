@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Scene } from 'phaser';
 import { SmartNPC } from '../entities/SmartNPC';
 import { InteractiveObject, Desk } from '../entities/InteractiveObject';

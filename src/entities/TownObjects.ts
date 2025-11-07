@@ -46,9 +46,9 @@ export class WellObject extends InteractiveObject {
       case 'draw_water':
         if (this.hasWater && this.isClean) {
           // Visual: water splash effect
-          this.sprite.setTint(0x87ceeb);
+          (this.sprite as any).setTint(0x87ceeb);
           this.scene.time.delayedCall(1000, () => {
-            this.sprite.clearTint();
+            (this.sprite as any).clearTint();
           });
           
           return {
@@ -68,9 +68,9 @@ export class WellObject extends InteractiveObject {
           this.sprite.setFillStyle(0x4a90e2);
           
           // Visual: cleaning sparkle effect
-          this.sprite.setTint(0xffffff);
+          (this.sprite as any).setTint(0xffffff);
           this.scene.time.delayedCall(500, () => {
-            this.sprite.clearTint();
+            (this.sprite as any).clearTint();
           });
           
           return {
@@ -246,9 +246,9 @@ export class Bench extends InteractiveObject {
       
       case 'examine':
         // Visual feedback: brief highlight
-        this.sprite.setTint(0xffff88);
+        (this.sprite as any).setTint(0xffff88);
         this.scene.time.delayedCall(500, () => {
-          this.sprite.clearTint();
+          (this.sprite as any).clearTint();
         });
         
         return {

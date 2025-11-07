@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RPG Level Editor</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        display: flex;
+        height: 100vh;
+        width: 100vw;
+        box-sizing: border-box;
+      }
+      .sidebar {
+        width: 320px;
+        min-width: 200px;
+        max-width: 50vw;
+        flex-shrink: 0;
+        background: #2c3e50;
+        color: white;
+        padding: 10px 30px 10px 10px;
+        overflow-y: auto;
+        position: relative;
+      }
+
+      .resize-handle {
+        position: absolute;
+        top: 0;
+        width: 4px;
+        height: 100%;
+        background: #34495e;
+        cursor: ew-resize;
+        z-index: 10;
+      }
+
+      .resize-handle:hover {
+        background: #5a6c7d;
+      }
+
+      .resize-handle-right {
+        right: 0;
+      }
+
+      .resize-handle-left {
+        left: 0;
+      }
+
+      .main-area {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .tileset-sidebar {
+        width: 280px;
+        min-width: 200px;
+        flex-shrink: 0;
+        background: #34495e;
+        color: white;
+        padding: 10px;
+        position: relative;
+        overflow-y: auto;
+        border-left: 1px solid #2c3e50;
+      }
+
+      .toolbar {
+        height: 60px;
+        background: #34495e;
+        display: flex;
+        width: 100%;
+        justify-content: space-between;
+        align-items: center;
+        padding: 15px 20px;
+        border-bottom: 1px solid #2c3e50;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        color: white;
+        box-sizing: border-box;
+      }
+
+      .toolbar-info {
+        color: #bdc3c7;
+        font-size: 14px;
+      }
+
+      .toolbar-controls {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+      }
+
+      #tools button {
+        margin-bottom: 6px;
+      }
+
+      .accordion-section {
+        border-bottom: 1px solid #34495e;
+      }
+
+      .accordion-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px 15px;
+        background: #2c3e50;
+        cursor: pointer;
+        user-select: none;
+      }
+
+      .accordion-header:hover {
+        background: #34495e;
+      }
+
+      .accordion-header h3 {
+        margin: 0;
+        font-size: 14px;
+      }
+
+      .accordion-toggle {
+        font-size: 12px;
+        transition: transform 0.2s;
+      }
+
+      .accordion-content {
+        padding: 15px;
+        background: #2c3e50;
+      }
+
+      .modal {
+        display: none;
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+      }
+
+      .modal-content {
+        background-color: #2c3e50;
+        margin: 15% auto;
+        padding: 0;
+        border-radius: 8px;
+        width: 400px;
+        color: white;
+      }
+
+      .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 20px;
+        border-bottom: 1px solid #34495e;
+      }
+
+      .modal-header h3 {
+        margin: 0;
+      }
+
+      .close {
+        font-size: 24px;
+        cursor: pointer;
+      }
+
+      .modal-body {
+        padding: 20px;
+      }
+
+      .modal-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        padding: 20px;
+        border-top: 1px solid #34495e;
+      }
+
+      .form-group {
+        margin-bottom: 15px;
+      }
+
+      .form-group label {
+        display: block;
+        margin-bottom: 5px;
+        font-size: 14px;
+      }
+
+      .form-row {
+        display: flex;
+        gap: 15px;
+      }
+
+      .form-row .form-group {
+        flex: 1;
+      }
+
+      .control-group {
+        margin-bottom: 15px;
+      }
+
+      .control-group label {
+        display: block;
+        margin-bottom: 5px;
+        font-size: 12px;
+        color: #bdc3c7;
+      }
+
+      .button-row {
+        display: flex;
+        gap: 5px;
+        margin-bottom: 10px;
+        flex-wrap: wrap;
+      }
+
+      .button-row button {
+        flex: 1;
+        min-width: 50px;
+        padding: 5px 8px;
+        font-size: 12px;
+      }
+
+      .layer-controls {
+        display: flex;
+        gap: 5px;
+        margin-top: 5px;
+      }
+
+      .layer-controls button {
+        flex: 1;
+      }
+      .canvas-container {
+        flex: 1;
+        position: relative;
+        overflow: hidden;
+        background: #ecf0f1;
+      }
+      #levelCanvas {
+        cursor: crosshair;
+      }
+      .tileset-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 2px;
+        margin: 10px 0;
+        position: relative;
+      }
+      .tile {
+        width: 40px;
+        height: 40px;
+        border: 2px solid transparent;
+        cursor: pointer;
+        image-rendering: pixelated;
+      }
+      .tile:hover {
+        border-color: #3498db;
+      }
+      .tile.selected {
+        border-color: #e74c3c;
+        box-shadow: 0 0 5px #e74c3c;
+      }
+      .tool-group {
+        margin: 15px 0;
+      }
+      .tool-group h3 {
+        margin: 0 0 10px 0;
+        font-size: 14px;
+      }
+      .tool-group button {
+        margin-bottom: 5px;
+      }
+      button {
+        padding: 8px 12px;
+        background: #3498db;
+        color: white;
+        border: none;
+        cursor: pointer;
+        border-radius: 4px;
+      }
+      button:hover {
+        background: #2980b9;
+      }
+      input,
+      select {
+        padding: 5px;
+        margin: 5px 0;
+        width: 100%;
+      }
+      .object-palette {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        margin: 10px 0;
+      }
+      .object-item {
+        padding: 8px;
+        background: #34495e;
+        border: 2px solid transparent;
+        cursor: pointer;
+        border-radius: 4px;
+        font-size: 12px;
+        user-select: none;
+      }
+      .object-item:hover {
+        background: #4a6741;
+      }
+      .object-item.selected {
+        border-color: #e74c3c;
+        background: #c0392b;
+      }
+      .placed-object {
+        position: absolute;
+        font-size: 20px;
+        pointer-events: none;
+        z-index: 10;
+        text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+      }
+      .gallery-modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.8);
+        z-index: 1000;
+      }
+      .gallery-content {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 80%;
+        height: 80%;
+        background: #2c3e50;
+        border-radius: 8px;
+        padding: 20px;
+        overflow-y: auto;
+      }
+      .gallery-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        color: white;
+      }
+      .layer-viz {
+        display: flex;
+        flex-direction: row-reverse;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+      }
+      .layer-viz input[type="checkbox"] {
+        width: min-content;
+      }
+      .gallery-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 15px;
+      }
+      .tileset-preview {
+        background: #34495e;
+        border-radius: 4px;
+        padding: 10px;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+      .tileset-preview:hover {
+        background: #4a6741;
+      }
+      .tileset-preview img {
+        width: 100%;
+        height: 120px;
+        object-fit: cover;
+        border-radius: 4px;
+      }
+      .tileset-preview .name {
+        color: white;
+        font-size: 12px;
+        margin-top: 8px;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="sidebar">
+      <div class="resize-handle resize-handle-right"></div>
+
+      <!-- Game Levels Section -->
+      <div class="accordion-section">
+        <div class="accordion-header active" data-target="game-levels">
+          <h3>Game Levels</h3>
+          <span class="accordion-toggle">▼</span>
+        </div>
+        <div class="accordion-content" id="game-levels" style="display: block">
+          <div class="button-row">
+            <button id="newLevel">New</button>
+            <button id="saveLevel">Save</button>
+            <button id="saveLevelAs">Save As</button>
+            <button id="deleteLevel">Delete</button>
+          </div>
+          <div class="form-group">
+            <label for="levelSelect">Select Level:</label>
+            <select id="levelSelect">
+              <option value="">New Level...</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tools Section -->
+      <div class="accordion-section">
+        <div class="accordion-header active" data-target="tools">
+          <h3>Tools</h3>
+          <span class="accordion-toggle">▼</span>
+        </div>
+        <div class="accordion-content" id="tools" style="display: block">
+          <button id="paintTool" class="active">Paint</button>
+          <button id="eraseTool">Erase</button>
+          <button id="fillTool">Fill</button>
+          <button id="boundaryTool">Boundary</button>
+          <button id="objectTool">Objects</button>
+          <button id="selectTool">Select</button>
+          <button id="replaceTool">Replace All</button>
+        </div>
+      </div>
+
+      <!-- Selection Section -->
+      <div class="accordion-section">
+        <div class="accordion-header" data-target="selection">
+          <h3>Selection</h3>
+          <span class="accordion-toggle">▶</span>
+        </div>
+        <div class="accordion-content" id="selection" style="display: none">
+          <button id="copyBtn" disabled>Copy</button>
+          <button id="pasteBtn" disabled>Paste</button>
+          <button id="deleteBtn" disabled>Delete</button>
+          <button id="replaceSelectionBtn" disabled>Replace</button>
+        </div>
+      </div>
+
+      <!-- Objects Section -->
+      <div class="accordion-section">
+        <div class="accordion-header" data-target="objects">
+          <h3>Objects</h3>
+          <span class="accordion-toggle">▶</span>
+        </div>
+        <div class="accordion-content" id="objects" style="display: none">
+          <div class="object-palette">
+            <div class="object-item" data-type="spawn" data-subtype="player">
+              ⭐ Player Spawn
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Level Controls Section -->
+      <div class="accordion-section">
+        <div class="accordion-header" data-target="level-controls">
+          <h3>Level Controls</h3>
+          <span class="accordion-toggle">▶</span>
+        </div>
+        <div
+          class="accordion-content"
+          id="level-controls"
+          style="display: none"
+        >
+          <div class="control-group">
+            <label>Add Rows:</label>
+            <div class="button-row">
+              <button id="addRowTop">Top</button>
+              <button id="addRowBottom">Bottom</button>
+            </div>
+          </div>
+          <div class="control-group">
+            <label>Add Columns:</label>
+            <div class="button-row">
+              <button id="addColLeft">Left</button>
+              <button id="addColRight">Right</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Layers Section -->
+      <div class="accordion-section">
+        <div class="accordion-header" data-target="layers">
+          <h3>Layers</h3>
+          <span class="accordion-toggle">▶</span>
+        </div>
+        <div class="accordion-content" id="layers" style="display: none">
+          <select id="layerSelect">
+            <option value="background">Background</option>
+            <option value="collision">Collision</option>
+            <option value="objects">Objects</option>
+          </select>
+          <div class="layer-controls">
+            <button id="addLayerBtn">Add Layer</button>
+            <button id="deleteLayerBtn">Delete Layer</button>
+          </div>
+          <div id="layerVisibility">
+            <h4>Layer Visibility</h4>
+            <div id="layerToggles"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="main-area">
+      <div class="toolbar">
+        <div class="toolbar-controls">
+          <span>Zoom: </span>
+          <button id="zoomOut">-</button>
+          <span id="zoomLevel">100%</span>
+          <button id="zoomIn">+</button>
+          <button id="gridToggle">Toggle Grid</button>
+        </div>
+        <div class="toolbar-info">
+          <span id="currentLevelLayer">Untitled - Background</span>
+        </div>
+      </div>
+      <div class="canvas-container">
+        <canvas id="levelCanvas"></canvas>
+      </div>
+    </div>
+
+    <div class="tileset-sidebar">
+      <div class="resize-handle resize-handle-left"></div>
+      <h3>Tileset</h3>
+      <button id="openGallery">🖼️ Browse Gallery</button>
+      <div
+        id="currentTilesetName"
+        style="font-size: 12px; color: #bdc3c7; margin: 10px 0"
+      >
+        No tileset loaded
+      </div>
+      <div id="tilesetGrid" class="tileset-grid"></div>
+    </div>
+
+    <!-- Level Dialog Modal -->
+    <div id="levelModal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 id="modalTitle">New Level</h3>
+          <span class="close">&times;</span>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="modalLevelName">Level Name:</label>
+            <input
+              type="text"
+              id="modalLevelName"
+              placeholder="Enter level name..."
+            />
+          </div>
+          <div id="levelSizeControls" class="form-row">
+            <div class="form-group">
+              <label for="modalLevelWidth">Width:</label>
+              <input
+                type="number"
+                id="modalLevelWidth"
+                value="50"
+                min="10"
+                max="200"
+              />
+            </div>
+            <div class="form-group">
+              <label for="modalLevelHeight">Height:</label>
+              <input
+                type="number"
+                id="modalLevelHeight"
+                value="30"
+                min="10"
+                max="200"
+              />
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="modalCancel">Cancel</button>
+          <button id="modalConfirm">Create</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Gallery Modal -->
+    <div id="galleryModal" class="gallery-modal">
+      <div class="gallery-content">
+        <div class="gallery-header">
+          <h2>Tileset Gallery</h2>
+          <button id="closeGallery">✕ Close</button>
+        </div>
+        <div style="margin-bottom: 15px">
+          <input
+            type="text"
+            id="gallerySearch"
+            placeholder="Search tilesets..."
+            style="
+              width: 100%;
+              padding: 8px;
+              border: 1px solid #bdc3c7;
+              border-radius: 4px;
+            "
+          />
+        </div>
+        <div id="galleryGrid" class="gallery-grid"></div>
+      </div>
+    </div>
+
+    <div
+      id="tileInfo"
+      style="
+        position: absolute;
+        bottom: 10px;
+        right: 10px;
+        background: rgba(0, 0, 0, 0.8);
+        color: white;
+        padding: 8px;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 12px;
+        pointer-events: none;
+        display: none;
+      "
+    >
+      Tile ID: -
+    </div>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

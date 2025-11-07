@@ -16,13 +16,15 @@ import { TileIndexViewerScene } from './src/scenes/TileIndexViewerScene';
 import { PropsViewerScene } from './src/scenes/PropsViewerScene';
 import { PixelArtDemoScene } from './src/scenes/PixelArtDemoScene';
 import { AdvancedLevelDemoScene } from './src/scenes/AdvancedLevelDemoScene';
+import { LevelTestScene } from './src/scenes/LevelTestScene';
+import { TestTownScene } from './src/scenes/TestTownScene';
 
 const config = {
     type: AUTO,
     width: window.innerWidth,
     height: window.innerHeight,
     parent: 'game-container',
-    backgroundColor: '#87CEEB', // Sky blue background for outdoor scenes
+    backgroundColor: '#000000', // Black background
     scale: {
         mode: Phaser.Scale.RESIZE,
         autoCenter: Phaser.Scale.CENTER_BOTH
@@ -44,7 +46,9 @@ const config = {
         TileIndexViewerScene, 
         PropsViewerScene,
         PixelArtDemoScene,
-        AdvancedLevelDemoScene
+        AdvancedLevelDemoScene,
+        LevelTestScene,
+        TestTownScene
     ]
 };
 

@@ -16,6 +16,7 @@ export interface Character {
 export class SmartNPC implements Character {
   public sprite: Phaser.GameObjects.Sprite;
   public nameText: Phaser.GameObjects.Text;
+  public proximityIndicator: Phaser.GameObjects.Graphics;
   public scene: Scene;
   public id: string;
   public name: string;
@@ -34,6 +35,7 @@ export class SmartNPC implements Character {
   private pendingLLMRequest?: Promise<any>; // Track in-flight requests
   private pathfindingTimer?: Phaser.Time.TimerEvent; // Separate timer for pathfinding
   private isMoving: boolean = false; // Track if NPC is currently moving
+  public isInPlayerConversation: boolean = false; // Track if NPC is in conversation with player
 
   // Discovery and awareness
   private discoveredObjects: Set<string> = new Set();
@@ -58,6 +60,7 @@ export class SmartNPC implements Character {
   private pathIndex: number = 0;
   private pathTarget: string = ""; // Track what we're moving toward
   private role: string; // Store the NPC's role for special abilities
+  private wasPlayerNearby: boolean = false; // Track proximity state changes
 
   constructor(
     scene: Scene,
@@ -115,6 +118,11 @@ export class SmartNPC implements Character {
       })
       .setOrigin(0.5)
       .setAlpha(0.9);
+
+    // Create proximity indicator (initially hidden)
+    this.proximityIndicator = scene.add.graphics();
+    this.proximityIndicator.setAlpha(0.3);
+    this.updateProximityIndicator();
 
     this.startAILoop();
 
@@ -431,6 +439,7 @@ export class SmartNPC implements Character {
       // Use event-driven response if we have an event, otherwise use regular action generation
       if (eventType && eventData) {
         console.log(`🎯 ${this.name}: Processing event: ${eventType}`, eventData);
+        console.log(`[PROMPT] [EVENT] ${this.name}: Event-driven prompt - ${eventType}. Tools: [${context.availableTools.map(t => t.name).join(', ')}]`);
         this.lastEventTime = now; // Update event time
         requestPromise = this.aiService.generateEventResponse(
           context,
@@ -440,6 +449,7 @@ export class SmartNPC implements Character {
         );
       } else {
         console.log(`⏰ ${this.name}: Timed action (no recent events)`);
+        console.log(`[PROMPT] [CHRON] ${this.name}: Timed prompt - fallback action. Tools: [${context.availableTools.map(t => t.name).join(', ')}]`);
         requestPromise = this.aiService.generateNPCAction(
           context,
           this.conversationMessages
@@ -453,6 +463,10 @@ export class SmartNPC implements Character {
       if (this.pendingLLMRequest === requestPromise) {
         this.pendingLLMRequest = undefined;
       }
+
+      // Log the NPC's decision with appropriate tags
+      const responseTag = eventType && eventData ? "[EVENT]" : "[CHRON]";
+      console.log(`[PROMPT] [RESPONSE] ${responseTag} ${this.name}: Chose action "${decision.action}" - ${decision.reasoning}`);
 
       console.log(`🤖 ${this.name}: LLM Decision:`, {
         action: decision.action,
@@ -527,6 +541,23 @@ export class SmartNPC implements Character {
     }
   }
 
+  private updateProximityIndicator(): void {
+    this.proximityIndicator.clear();
+    
+    const myPos = this.getPosition();
+    const PROXIMITY_RANGE = 96; // 2 tiles
+    
+    // Always show NPC proximity range for testing
+    if (this.isAnyoneNearby()) {
+      // Green when someone is nearby (can speak)
+      this.proximityIndicator.lineStyle(2, 0x00ff00, 0.6);
+    } else {
+      // Red when no one is nearby (cannot speak)
+      this.proximityIndicator.lineStyle(2, 0xff0000, 0.3);
+    }
+    this.proximityIndicator.strokeCircle(myPos.x, myPos.y, PROXIMITY_RANGE);
+  }
+
   private updateLineOfSight(): void {
     const myPos = this.getPosition();
     this.discoveredObjects.clear();
@@ -559,6 +590,9 @@ export class SmartNPC implements Character {
         }
       }
     });
+
+    // Update proximity indicator
+    this.updateProximityIndicator();
   }
 
   private buildAIContext(): NPCContext {
@@ -723,14 +757,16 @@ export class SmartNPC implements Character {
   private getAvailableTools(): NPCTool[] {
     const tools: NPCTool[] = [];
 
-    // PRIORITY: Add speak tool FIRST - NPCs should prioritize communication
-    tools.push(
-      { 
-        name: "speak", 
-        description: "Say something to nearby characters",
-        parameters: { message: "string" }
-      }
-    );
+    // Only add speak tool if someone is within proximity (1-2 tiles)
+    if (this.isAnyoneNearby()) {
+      tools.push(
+        { 
+          name: "speak", 
+          description: "Say something to nearby characters",
+          parameters: { message: "string" }
+        }
+      );
+    }
 
     // Add move_to tool for intelligent pathfinding
     tools.push(
@@ -846,6 +882,48 @@ export class SmartNPC implements Character {
       tools.map((t) => t.name)
     );
     return tools;
+  }
+
+  public onPlayerProximityEnter(distance: number): void {
+    console.log(`[PROMPT] [EVENT] ${this.name}: Player entered proximity - triggering greeting event`);
+    this.performAIAction('player_proximity', { 
+      player: 'player',
+      distance: distance
+    });
+  }
+
+  public onPlayerProximityExit(distance: number): void {
+    // Optional: Handle when player leaves proximity
+    console.log(`${this.name}: Player left proximity`);
+  }
+
+  public checkProximityChanges(): void {
+    // This method is now obsolete - proximity is handled by events
+  }
+
+  private isAnyoneNearby(): boolean {
+    const myPos = this.getPosition();
+    const PROXIMITY_RANGE = 96; // 2 tiles at 48px per tile
+
+    console.log(`🔍 ${this.name}: Checking proximity - my position: (${Math.round(myPos.x)}, ${Math.round(myPos.y)})`);
+    
+    // Check if any character (including player) is within proximity
+    const nearbyCharacters = this.roomCharacters.filter(char => {
+      if (char.id === this.id) return false; // Don't count self
+      
+      const charPos = char.getPosition();
+      const distance = Phaser.Math.Distance.Between(
+        myPos.x, myPos.y,
+        charPos.x, charPos.y
+      );
+      
+      console.log(`🔍 ${this.name}: Distance to ${char.id}: ${Math.round(distance)} (range: ${PROXIMITY_RANGE})`);
+      
+      return distance < PROXIMITY_RANGE;
+    });
+
+    console.log(`🔍 ${this.name}: Found ${nearbyCharacters.length} nearby characters: [${nearbyCharacters.map(c => c.id).join(', ')}]`);
+    return nearbyCharacters.length > 0;
   }
 
   private isPlayerNearby(): boolean {
@@ -1424,11 +1502,6 @@ export class SmartNPC implements Character {
   }
 
   private followPlayer(): void {
-    // Only follow in TownOverworldScene
-    if (this.scene.scene.key !== 'TownOverworldScene') {
-      return;
-    }
-
     const player = this.roomCharacters.find(c => c.id === "player");
     if (!player) return;
 
@@ -1436,10 +1509,11 @@ export class SmartNPC implements Character {
     const myPos = this.getPosition();
     const distance = Phaser.Math.Distance.Between(myPos.x, myPos.y, playerPos.x, playerPos.y);
 
-    // Follow if player is too far away (more than 80 units) and not already moving
-    if (distance > 80 && !this.isMoving) {
-      // Calculate position slightly behind the player
-      const followDistance = 60;
+    // Follow if player is too far away (more than speaking range) and not already moving
+    const FOLLOW_DISTANCE = 96; // Same as speaking range
+    if (distance > FOLLOW_DISTANCE && !this.isMoving) {
+      // Calculate position at speaking range behind the player
+      const followDistance = 80; // Stay just within speaking range
       const angle = Phaser.Math.Angle.Between(playerPos.x, playerPos.y, myPos.x, myPos.y);
       const targetX = playerPos.x + Math.cos(angle) * followDistance;
       const targetY = playerPos.y + Math.sin(angle) * followDistance;
@@ -1466,5 +1540,6 @@ export class SmartNPC implements Character {
     this.speechBubble.destroy();
     this.sprite.destroy();
     this.nameText.destroy();
+    this.proximityIndicator.destroy();
   }
 }

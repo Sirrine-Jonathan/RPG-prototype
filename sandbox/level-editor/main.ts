@@ -18,7 +18,7 @@ interface LevelData {
 
 interface PlacedObject {
   id: string;
-  type: "npc" | "interactive" | "spawn";
+  type: "npc" | "interactive" | "spawn" | "portal";
   subtype: string;
   x: number;
   y: number;
@@ -87,6 +87,7 @@ class LevelEditor {
   private levelData: LevelData;
   private isDragging = false;
   private isPanning = false;
+  private isInitialClick = false;
   private lastX = 0;
   private lastY = 0;
   private panX = 0;
@@ -94,6 +95,8 @@ class LevelEditor {
   private selectedObject: { type: string; subtype: string } | null = null;
   private objectIdCounter = 0;
   private currentLevelId: string | null = null;
+  private currentBuildingPosition: { x: number, y: number } | null = null;
+  private modalJustClosed: boolean = false;
   private assets: Asset[] = [];
   private levels: GameLevel[] = [];
   private apiBase = "http://localhost:3001/api";
@@ -129,6 +132,8 @@ class LevelEditor {
     this.setupSidebarResize();
     this.setupAccordions();
     this.setupModals();
+    this.setupPortalModal();
+    this.setupSpawnModal();
     this.setupLayerVisibilityControls();
     this.setupTilesetKeyboardShortcuts();
     this.updateToolbarInfo();
@@ -354,17 +359,19 @@ class LevelEditor {
 
   private openGallery() {
     const modal = document.getElementById("galleryModal")!;
-    this.populateGallery();
-    modal.style.display = "flex";
+    this.loadAssets().then(() => {
+      this.populateGallery();
+      modal.style.display = "flex";
 
-    // Add search functionality
-    const searchInput = document.getElementById(
-      "gallerySearch"
-    ) as HTMLInputElement;
-    searchInput.value = "";
-    searchInput.addEventListener("input", () =>
-      this.filterGallery(searchInput.value)
-    );
+      // Add search functionality
+      const searchInput = document.getElementById(
+        "gallerySearch"
+      ) as HTMLInputElement;
+      searchInput.value = "";
+      searchInput.addEventListener("input", () =>
+        this.filterGallery(searchInput.value)
+      );
+    });
   }
 
   private populateGallery(searchTerm = "") {
@@ -483,6 +490,85 @@ class LevelEditor {
           toggle!.textContent = "▼";
         }
       });
+    });
+  }
+
+  private setupPortalModal() {
+    const confirmBtn = document.getElementById('confirmPortal')!;
+    confirmBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      if (this.currentBuildingPosition) {
+        const portalId = (document.getElementById('portalId') as HTMLInputElement).value;
+        const targetScene = (document.getElementById('targetScene') as HTMLSelectElement).value;
+        const targetPortalId = (document.getElementById('targetPortalId') as HTMLInputElement).value;
+        
+        this.placePortalWithProperties(
+          this.currentBuildingPosition.x, 
+          this.currentBuildingPosition.y,
+          portalId,
+          targetScene,
+          targetPortalId
+        );
+        
+        document.getElementById('portalModal')!.style.display = 'none';
+        this.currentBuildingPosition = null;
+        
+        // Prevent immediate re-opening
+        this.modalJustClosed = true;
+        setTimeout(() => {
+          this.modalJustClosed = false;
+        }, 200);
+      }
+    });
+  }
+
+  private setupSpawnModal() {
+    const confirmBtn = document.getElementById('confirmSpawn')!;
+    confirmBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      if (this.currentBuildingPosition) {
+        const spawnId = (document.getElementById('spawnId') as HTMLInputElement).value;
+        const isDefault = (document.getElementById('isDefaultSpawn') as HTMLInputElement).checked;
+        
+        this.placeSpawnWithProperties(
+          this.currentBuildingPosition.x, 
+          this.currentBuildingPosition.y,
+          spawnId,
+          isDefault
+        );
+        
+        document.getElementById('spawnModal')!.style.display = 'none';
+        this.currentBuildingPosition = null;
+        
+        // Brief delay to prevent immediate re-triggering
+        setTimeout(() => {
+          this.isDragging = false;
+        }, 100);
+      }
+    });
+  }
+
+  private setupBuildingModal() {
+    const confirmBtn = document.getElementById('confirmBuilding')!;
+    confirmBtn.addEventListener('click', () => {
+      if (this.currentBuildingPosition) {
+        const name = (document.getElementById('buildingName') as HTMLInputElement).value;
+        const scene = (document.getElementById('buildingScene') as HTMLSelectElement).value;
+        
+        this.placeBuildingWithProperties(
+          this.currentBuildingPosition.x, 
+          this.currentBuildingPosition.y,
+          name,
+          scene
+        );
+        
+        document.getElementById('buildingModal')!.style.display = 'none';
+        this.currentBuildingPosition = null;
+      }
     });
   }
 
@@ -1289,6 +1375,7 @@ class LevelEditor {
       this.hasSelection = false;
     } else {
       this.isDragging = true;
+      this.isInitialClick = true;
       this.paintTile(x, y);
     }
 
@@ -1358,7 +1445,11 @@ class LevelEditor {
     }
 
     if (this.currentTool === "object" && this.selectedObject) {
-      this.placeObject(x, y);
+      // Only place object on initial click, not on drag
+      if (this.isInitialClick) {
+        this.placeObject(x, y);
+        this.isInitialClick = false;
+      }
     } else {
       const layer = this.levelData.layers[this.currentLayer];
       if (
@@ -1387,12 +1478,29 @@ class LevelEditor {
   private placeObject(x: number, y: number) {
     if (!this.selectedObject) return;
 
+    // Prevent modal from reopening immediately after closing
+    if (this.modalJustClosed) return;
+
     // Remove existing object at this position
     this.levelData.layers.objects = this.levelData.layers.objects.filter(
       (obj) => !(obj.x === x && obj.y === y)
     );
 
-    // Add new object
+    // Handle portal placement with modal
+    if (this.selectedObject.type === "portal") {
+      this.currentBuildingPosition = { x, y };
+      document.getElementById('portalModal')!.style.display = 'flex';
+      return;
+    }
+
+    // Handle spawn placement with modal (except player spawn)
+    if (this.selectedObject.type === "spawn" && this.selectedObject.subtype === "portal") {
+      this.currentBuildingPosition = { x, y };
+      document.getElementById('spawnModal')!.style.display = 'flex';
+      return;
+    }
+
+    // Create regular object (player spawn, NPCs, etc.)
     const newObject: PlacedObject = {
       id: `obj_${this.objectIdCounter++}`,
       type: this.selectedObject.type as any,
@@ -1403,6 +1511,41 @@ class LevelEditor {
     };
 
     this.levelData.layers.objects.push(newObject);
+  }
+
+  private placePortalWithProperties(x: number, y: number, portalId: string, targetScene: string, targetPortalId: string) {
+    const newObject: PlacedObject = {
+      id: `portal_${this.objectIdCounter++}`,
+      type: "portal",
+      subtype: "scene_exit",
+      x: x,
+      y: y,
+      properties: {
+        portalId: portalId,
+        targetScene: targetScene,
+        targetPortalId: targetPortalId
+      },
+    };
+
+    this.levelData.layers.objects.push(newObject);
+    this.render();
+  }
+
+  private placeSpawnWithProperties(x: number, y: number, spawnId: string, isDefault: boolean) {
+    const newObject: PlacedObject = {
+      id: `spawn_${this.objectIdCounter++}`,
+      type: "spawn",
+      subtype: "portal",
+      x: x,
+      y: y,
+      properties: {
+        spawnId: spawnId,
+        isDefault: isDefault
+      },
+    };
+
+    this.levelData.layers.objects.push(newObject);
+    this.render();
   }
 
   private onRightClick(event: MouseEvent) {
@@ -1606,6 +1749,15 @@ class LevelEditor {
       "interactive-door": "🚪",
       "interactive-sign": "📋",
       "spawn-player": "⭐",
+      "spawn-portal": "📍",
+      "portal-scene_exit": "🚪",
+      "building-hospital": "🏥",
+      "building-police_station": "🚔",
+      "building-library": "📚",
+      "building-school": "🏫",
+      "building-grocery_store": "🛒",
+      "building-tavern": "🍺",
+      "building-art_museum": "🎨",
     };
 
     this.levelData.layers.objects.forEach((obj) => {
@@ -1626,6 +1778,14 @@ class LevelEditor {
       // Icon
       this.ctx.fillStyle = "#ffffff";
       this.ctx.fillText(icon, x, y);
+
+      // Show portal/spawn IDs for debugging
+      if (obj.type === "portal" || obj.type === "spawn") {
+        const id = obj.properties?.portalId || obj.properties?.spawnId || "?";
+        this.ctx.font = `${Math.max(8, tileSize * 0.2)}px Arial`;
+        this.ctx.fillStyle = "rgba(255,255,255,0.8)";
+        this.ctx.fillText(id, x, y + tileSize * 0.3);
+      }
     });
   }
 

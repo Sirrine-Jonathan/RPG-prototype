@@ -1,10 +1,12 @@
 // @ts-nocheck
 import { GameplayScene } from "./GameplayScene";
 import { SmartNPC } from "../entities/SmartNPC";
+import { GuideNPC } from "../entities/GuideNPC";
 import { WellObject, NoticeBoard, Barrel, Bench } from "../entities/TownObjects";
 import { InteractiveObject } from "../entities/InteractiveObject";
 import { GameStateManager } from "../systems/GameStateManager";
 import { SceneManager } from "../systems/SceneManager";
+import { Debug } from "../utils/Debug";
 
 export class TownOverworldScene extends GameplayScene {
   private storyManager!: SceneManager;
@@ -17,7 +19,7 @@ export class TownOverworldScene extends GameplayScene {
   public doctor!: SmartNPC;
   public merchant!: SmartNPC;
   public librarian!: SmartNPC;
-  public assistant!: SmartNPC; // Story guide and note-taker
+  public assistant!: GuideNPC; // Story guide and note-taker
 
   // Interactive objects
   private townObjects: InteractiveObject[] = [];
@@ -109,6 +111,8 @@ export class TownOverworldScene extends GameplayScene {
   }
   
   private updateProximityCircle(): void {
+    if (!Debug.enabled) return;
+    
     this.proximityCircle.clear();
     this.proximityCircle.lineStyle(2, 0x00ff00, 0.5);
     this.proximityCircle.fillStyle(0x00ff00, 0.1);
@@ -366,12 +370,8 @@ export class TownOverworldScene extends GameplayScene {
     console.log(`Eleanor Sage: pixel(450, 1200) = tile(${Math.floor(450/48)}, ${Math.floor(1200/48)})`);
 
     // Create the assistant - a knowledgeable guide who helps players navigate the story
-    this.assistant = new SmartNPC(
-      this, 1200, 1200, "bob", "Guide",
-      "Wise and observant, knows everyone in town and understands the full scope of the mystery. Helpful and patient, enjoys guiding newcomers and taking detailed notes about important discoveries. Always ready to provide hints and explain how things work.",
-      "You are Guide, the town's unofficial guide and record-keeper. You have observed the entire mystery unfold and know all the key players, locations, and clues. Your role is to help visitors navigate the investigation by providing hints, taking notes of important discoveries, and explaining how to interact with the world. You are knowledgeable about the full story but reveal information gradually to maintain the mystery. You always stay close to the visitor to provide assistance.",
-      "guide"
-    );
+    this.assistant = new GuideNPC(this, 1200, 1200, "Detective");
+    this.assistant.setFollowTarget(this.player);
     console.log(`Guide: pixel(1200, 1200) = tile(${Math.floor(1200/48)}, ${Math.floor(1200/48)})`);
     
     console.log('=== END NPC DATA ===');
@@ -552,44 +552,9 @@ export class TownOverworldScene extends GameplayScene {
   }
 
   private updateGuideFollowing(): void {
-    if (!this.assistant || !this.player) return;
-
-    const distance = Phaser.Math.Distance.Between(
-      this.player.x, this.player.y,
-      this.assistant.sprite.x, this.assistant.sprite.y
-    );
-
-    // Follow player if distance exceeds 80 units
-    if (distance > 80) {
-      // Calculate position 60 units behind player based on last direction
-      let targetX = this.player.x;
-      let targetY = this.player.y;
-
-      switch (this.lastDirection) {
-        case 'up':
-          targetY += 60;
-          break;
-        case 'down':
-          targetY -= 60;
-          break;
-        case 'left':
-          targetX += 60;
-          break;
-        case 'right':
-          targetX -= 60;
-          break;
-      }
-
-      // Use pathfinding to move Guide to target position
-      const path = this.pathfinding.findPath(
-        this.assistant.sprite.x, this.assistant.sprite.y,
-        targetX, targetY
-      );
-
-      if (path.length > 1) {
-        const nextStep = path[1];
-        this.assistant.moveToPosition(nextStep.x, nextStep.y);
-      }
+    // Following behavior now handled by GuideNPC class
+    if (this.assistant) {
+      this.assistant.update();
     }
   }
 }

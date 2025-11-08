@@ -1,6 +1,7 @@
 import { Scene } from 'phaser';
 import { InteractiveObject, InteractionResult } from './InteractiveObject';
 import { NPCTool } from '../services/AIService';
+import { Debug } from '../utils/Debug';
 
 export class WellObject extends InteractiveObject {
   private hasWater: boolean = true;
@@ -171,7 +172,9 @@ export class Barrel extends InteractiveObject {
         if (!this.isOpen) {
           this.isOpen = true;
           this.setState('open');
-          this.sprite.setStrokeStyle(3, 0x00ff00);
+          if (Debug.enabled) {
+            this.sprite.setStrokeStyle(3, 0x00ff00);
+          }
           return {
             success: true,
             message: `Opened barrel and found ${this.contents}`

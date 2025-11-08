@@ -10,6 +10,9 @@ app.use(cors());
 app.use(express.json());
 app.use('/assets', express.static(path.join(__dirname, '../../public/assets')));
 
+// Serve static files from the level editor directory
+app.use(express.static(__dirname));
+
 const LEVELS_DIR = path.join(__dirname, '../../levels');
 const ASSETS_DIR = path.join(__dirname, '../../public/assets');
 

@@ -3,6 +3,7 @@ import { AIService, NPCContext, NPCTool } from "../services/AIService";
 import { InteractiveObject } from "./InteractiveObject";
 import { SpeechBubble } from "../ui/SpeechBubble";
 import { Pathfinding } from "../utils/Pathfinding";
+import { Debug } from "../utils/Debug";
 
 const ACTION_DELAY = 20000; // 20 seconds between timed actions (fallback only)
 const LINE_OF_SIGHT_RANGE = 150;
@@ -33,14 +34,16 @@ export class SmartNPC implements Character {
   private activityTimer?: Phaser.Time.TimerEvent;
   private lastEventTime: number = 0; // Track when last event occurred
   private pendingLLMRequest?: Promise<any>; // Track in-flight requests
-  private pathfindingTimer?: Phaser.Time.TimerEvent; // Separate timer for pathfinding
   private isMoving: boolean = false; // Track if NPC is currently moving
   public isInPlayerConversation: boolean = false; // Track if NPC is in conversation with player
 
   // Discovery and awareness
   private discoveredObjects: Set<string> = new Set();
   private discoveredCharacters: Set<string> = new Set();
-  private discoveredLocations: Map<string, {x: number, y: number, name: string}> = new Map();
+  private discoveredLocations: Map<
+    string,
+    { x: number; y: number; name: string }
+  > = new Map();
   private conversationMessages: Array<{
     role: string;
     content?: string;
@@ -56,7 +59,7 @@ export class SmartNPC implements Character {
   private roomGrid: number[][] = [];
   private customGoals: string[] = [];
   private pathfinding: Pathfinding;
-  private currentPath: Array<{x: number, y: number}> = [];
+  private currentPath: Array<{ x: number; y: number }> = [];
   private pathIndex: number = 0;
   private pathTarget: string = ""; // Track what we're moving toward
   private role: string; // Store the NPC's role for special abilities
@@ -142,32 +145,37 @@ export class SmartNPC implements Character {
     let targetName: string;
 
     // Check if target is coordinates (x,y format)
-    if (target.includes(',')) {
-      const coords = target.split(',').map(s => parseInt(s.trim()));
+    if (target.includes(",")) {
+      const coords = target.split(",").map((s) => parseInt(s.trim()));
       if (coords.length === 2 && !isNaN(coords[0]) && !isNaN(coords[1])) {
         targetX = coords[0];
         targetY = coords[1];
         targetName = `coordinates (${targetX}, ${targetY})`;
       } else {
-        return { success: false, message: `Invalid coordinate format: ${target}` };
+        return {
+          success: false,
+          message: `Invalid coordinate format: ${target}`,
+        };
       }
     } else {
       // Try to find landmark by name
-      const landmarkKey = target.toLowerCase().replace(/\s+/g, '_');
+      const landmarkKey = target.toLowerCase().replace(/\s+/g, "_");
       const landmark = this.discoveredLocations.get(landmarkKey);
-      
+
       if (landmark) {
         targetX = landmark.x;
         targetY = landmark.y;
         targetName = landmark.name;
       } else {
         // Try partial matching for landmark names
-        const partialMatch = Array.from(this.discoveredLocations.entries())
-          .find(([key, location]) => 
-            key.includes(landmarkKey) || 
+        const partialMatch = Array.from(
+          this.discoveredLocations.entries()
+        ).find(
+          ([key, location]) =>
+            key.includes(landmarkKey) ||
             location.name.toLowerCase().includes(target.toLowerCase())
-          );
-        
+        );
+
         if (partialMatch) {
           targetX = partialMatch[1].x;
           targetY = partialMatch[1].y;
@@ -179,22 +187,34 @@ export class SmartNPC implements Character {
     }
 
     // Use pathfinding to calculate full path to target
-    const path = this.pathfinding.findPath(currentPos.x, currentPos.y, targetX, targetY);
-    
+    const path = this.pathfinding.findPath(
+      currentPos.x,
+      currentPos.y,
+      targetX,
+      targetY
+    );
+
     if (path.length > 1) {
       // Store the full path for continuous movement
       this.currentPath = path.slice(1); // Skip current position
       this.pathIndex = 0;
       this.pathTarget = targetName;
-      
+
       // Start smooth pathfinding like the player
       this.isMoving = true;
       this.followPath();
-      
-      const distance = Math.round(Phaser.Math.Distance.Between(currentPos.x, currentPos.y, targetX, targetY));
-      return { 
-        success: true, 
-        message: `Started pathfinding to ${targetName} (${distance} units away)` 
+
+      const distance = Math.round(
+        Phaser.Math.Distance.Between(
+          currentPos.x,
+          currentPos.y,
+          targetX,
+          targetY
+        )
+      );
+      return {
+        success: true,
+        message: `Started pathfinding to ${targetName} (${distance} units away)`,
       };
     } else {
       return {
@@ -205,7 +225,10 @@ export class SmartNPC implements Character {
   }
 
   private continuePathfinding(): { success: boolean; message: string } {
-    if (this.currentPath.length === 0 || this.pathIndex >= this.currentPath.length) {
+    if (
+      this.currentPath.length === 0 ||
+      this.pathIndex >= this.currentPath.length
+    ) {
       // Path completed
       this.currentPath = [];
       this.pathIndex = 0;
@@ -220,9 +243,9 @@ export class SmartNPC implements Character {
     this.pathIndex++;
 
     const remaining = this.currentPath.length - this.pathIndex;
-    return { 
-      success: true, 
-      message: `Continuing toward ${this.pathTarget} (${remaining} steps remaining)` 
+    return {
+      success: true,
+      message: `Continuing toward ${this.pathTarget} (${remaining} steps remaining)`,
     };
   }
 
@@ -232,9 +255,9 @@ export class SmartNPC implements Character {
     this.pathIndex = 0;
     this.pathTarget = "";
     this.isMoving = false;
-    return { 
-      success: true, 
-      message: `Abandoned pathfinding to ${target}` 
+    return {
+      success: true,
+      message: `Abandoned pathfinding to ${target}`,
     };
   }
 
@@ -246,16 +269,21 @@ export class SmartNPC implements Character {
       this.currentPath = [];
       this.pathIndex = 0;
       this.pathTarget = "";
-      
+
       // Play idle animation
       this.playIdleAnimation();
-      console.log(`🎯 ${this.name}: Arrived at ${target}`);
+      // console.log(`🎯 ${this.name}: Arrived at ${target}`);
       return;
     }
 
     const target = this.currentPath[this.pathIndex];
-    const distance = Phaser.Math.Distance.Between(this.sprite.x, this.sprite.y, target.x, target.y);
-    
+    const distance = Phaser.Math.Distance.Between(
+      this.sprite.x,
+      this.sprite.y,
+      target.x,
+      target.y
+    );
+
     if (distance < 5) {
       this.pathIndex++;
       this.followPath();
@@ -265,13 +293,13 @@ export class SmartNPC implements Character {
     // Determine direction for animation
     const dx = target.x - this.sprite.x;
     const dy = target.y - this.sprite.y;
-    
+
     if (Math.abs(dx) > Math.abs(dy)) {
-      this.lastDirection = dx > 0 ? 'right' : 'left';
+      this.lastDirection = dx > 0 ? "right" : "left";
     } else {
-      this.lastDirection = dy > 0 ? 'down' : 'up';
+      this.lastDirection = dy > 0 ? "down" : "up";
     }
-    
+
     // Play walking animation
     this.playWalkAnimation();
 
@@ -280,31 +308,31 @@ export class SmartNPC implements Character {
       targets: [this.sprite, this.nameText],
       x: target.x,
       duration: 300,
-      ease: 'Linear',
+      ease: "Linear",
       onComplete: () => {
         this.pathIndex++;
         this.followPath();
-      }
+      },
     });
 
     this.scene.tweens.add({
       targets: this.nameText,
       y: target.y - 35,
       duration: 300,
-      ease: 'Linear'
+      ease: "Linear",
     });
 
     this.scene.tweens.add({
       targets: this.sprite,
       y: target.y,
       duration: 300,
-      ease: 'Linear'
+      ease: "Linear",
     });
   }
 
   private playWalkAnimation(): void {
     if (!this.sprite || !this.sprite.scene || !this.sprite.anims) return;
-    
+
     const spriteKey = this.sprite.texture.key;
     if (spriteKey === "alex") {
       this.sprite.play(`alex_walk_${this.lastDirection}`, true);
@@ -317,7 +345,7 @@ export class SmartNPC implements Character {
 
   private playIdleAnimation(): void {
     if (!this.sprite || !this.sprite.scene || !this.sprite.anims) return;
-    
+
     const spriteKey = this.sprite.texture.key;
     if (spriteKey === "alex") {
       this.sprite.play(`alex_idle_${this.lastDirection}`, true);
@@ -328,24 +356,27 @@ export class SmartNPC implements Character {
     }
   }
 
-  private takeNote(note: string, category: string): { success: boolean; message: string } {
+  private takeNote(
+    note: string,
+    category: string
+  ): { success: boolean; message: string } {
     const noteEntry = {
       id: Date.now().toString(),
       content: note,
       category: category,
       timestamp: new Date().toLocaleString(),
-      location: "Town Square" // Could be enhanced to track actual location
+      location: "Town Square", // Could be enhanced to track actual location
     };
 
     // Emit note to the scene for storage
-    this.scene.events.emit('note-taken', noteEntry);
-    
+    this.scene.events.emit("note-taken", noteEntry);
+
     // Also speak the note for immediate feedback
     this.showSpeech(`📝 Noted: ${note}`);
-    
-    return { 
-      success: true, 
-      message: `Recorded note: ${note}` 
+
+    return {
+      success: true,
+      message: `Recorded note: ${note}`,
     };
   }
 
@@ -365,12 +396,15 @@ export class SmartNPC implements Character {
       { name: "Town Square", x: 1200, y: 900 },
     ];
 
-    landmarks.forEach(landmark => {
-      this.discoveredLocations.set(landmark.name.toLowerCase().replace(/\s+/g, '_'), {
-        x: landmark.x,
-        y: landmark.y,
-        name: landmark.name
-      });
+    landmarks.forEach((landmark) => {
+      this.discoveredLocations.set(
+        landmark.name.toLowerCase().replace(/\s+/g, "_"),
+        {
+          x: landmark.x,
+          y: landmark.y,
+          name: landmark.name,
+        }
+      );
     });
   }
 
@@ -397,7 +431,10 @@ export class SmartNPC implements Character {
     this.resetActionTimer();
   }
 
-  private async performAIAction(eventType?: string, eventData?: any): Promise<void> {
+  private async performAIAction(
+    eventType?: string,
+    eventData?: any
+  ): Promise<void> {
     // Update line of sight and check proximity
     this.updateLineOfSight();
 
@@ -406,7 +443,9 @@ export class SmartNPC implements Character {
     try {
       // If this is an event-driven action, cancel any pending timed requests
       if (eventType && eventData && this.pendingLLMRequest) {
-        console.log(`🚫 ${this.name}: Cancelling pending timed request due to event: ${eventType}`);
+        console.log(
+          `🚫 ${this.name}: Cancelling pending timed request due to event: ${eventType}`
+        );
         // Note: We can't actually cancel the HTTP request, but we can ignore its result
         this.pendingLLMRequest = undefined;
       }
@@ -415,9 +454,11 @@ export class SmartNPC implements Character {
       if (!eventType) {
         const timeSinceLastEvent = Date.now() - this.lastEventTime;
         const MIN_INACTIVITY_TIME = 15000; // 15 seconds minimum inactivity
-        
+
         if (timeSinceLastEvent < MIN_INACTIVITY_TIME) {
-          console.log(`⏰ ${this.name}: Skipping timed action - only ${timeSinceLastEvent}ms since last event (need ${MIN_INACTIVITY_TIME}ms)`);
+          console.log(
+            `⏰ ${this.name}: Skipping timed action - only ${timeSinceLastEvent}ms since last event (need ${MIN_INACTIVITY_TIME}ms)`
+          );
           this.resetActionTimer();
           return;
         }
@@ -435,11 +476,20 @@ export class SmartNPC implements Character {
 
       let decision;
       let requestPromise;
-      
+
       // Use event-driven response if we have an event, otherwise use regular action generation
       if (eventType && eventData) {
-        console.log(`🎯 ${this.name}: Processing event: ${eventType}`, eventData);
-        console.log(`[PROMPT] [EVENT] ${this.name}: Event-driven prompt - ${eventType}. Tools: [${context.availableTools.map(t => t.name).join(', ')}]`);
+        console.log(
+          `🎯 ${this.name}: Processing event: ${eventType}`,
+          eventData
+        );
+        console.log(
+          `[PROMPT] [EVENT] ${
+            this.name
+          }: Event-driven prompt - ${eventType}. Tools: [${context.availableTools
+            .map((t) => t.name)
+            .join(", ")}]`
+        );
         this.lastEventTime = now; // Update event time
         requestPromise = this.aiService.generateEventResponse(
           context,
@@ -449,7 +499,13 @@ export class SmartNPC implements Character {
         );
       } else {
         console.log(`⏰ ${this.name}: Timed action (no recent events)`);
-        console.log(`[PROMPT] [CHRON] ${this.name}: Timed prompt - fallback action. Tools: [${context.availableTools.map(t => t.name).join(', ')}]`);
+        console.log(
+          `[PROMPT] [CHRON] ${
+            this.name
+          }: Timed prompt - fallback action. Tools: [${context.availableTools
+            .map((t) => t.name)
+            .join(", ")}]`
+        );
         requestPromise = this.aiService.generateNPCAction(
           context,
           this.conversationMessages
@@ -466,7 +522,9 @@ export class SmartNPC implements Character {
 
       // Log the NPC's decision with appropriate tags
       const responseTag = eventType && eventData ? "[EVENT]" : "[CHRON]";
-      console.log(`[PROMPT] [RESPONSE] ${responseTag} ${this.name}: Chose action "${decision.action}" - ${decision.reasoning}`);
+      console.log(
+        `[PROMPT] [RESPONSE] ${responseTag} ${this.name}: Chose action "${decision.action}" - ${decision.reasoning}`
+      );
 
       console.log(`🤖 ${this.name}: LLM Decision:`, {
         action: decision.action,
@@ -515,7 +573,6 @@ export class SmartNPC implements Character {
 
       // Reset the timer for next timed action
       this.resetActionTimer();
-      
     } catch (error) {
       console.error(`AI action failed for ${this.name}:`, error);
       // Clear pending request tracking on error
@@ -529,33 +586,37 @@ export class SmartNPC implements Character {
     if (this.actionTimer) {
       this.actionTimer.destroy();
     }
-    
+
     // Only set timer if not in player conversation
     if (!this.isInPlayerConversation) {
       this.actionTimer = this.scene.time.addEvent({
         delay: ACTION_DELAY,
         callback: () => this.performAIAction(),
         callbackScope: this,
-        loop: false
+        loop: false,
       });
     }
   }
 
   private updateProximityIndicator(): void {
     this.proximityIndicator.clear();
-    
+
     const myPos = this.getPosition();
     const PROXIMITY_RANGE = 96; // 2 tiles
-    
-    // Always show NPC proximity range for testing
-    if (this.isAnyoneNearby()) {
-      // Green when someone is nearby (can speak)
-      this.proximityIndicator.lineStyle(2, 0x00ff00, 0.6);
+
+    // Show NPC proximity range only in debug mode
+    if (Debug.enabled) {
+      if (this.isAnyoneNearby()) {
+        // Green when someone is nearby (can speak)
+        this.proximityIndicator.lineStyle(2, 0x00ff00, 0.6);
+      } else {
+        // Red when no one is nearby (cannot speak)
+        this.proximityIndicator.lineStyle(2, 0xff0000, 0.3);
+      }
+      this.proximityIndicator.strokeCircle(myPos.x, myPos.y, PROXIMITY_RANGE);
     } else {
-      // Red when no one is nearby (cannot speak)
-      this.proximityIndicator.lineStyle(2, 0xff0000, 0.3);
+      this.proximityIndicator.clear();
     }
-    this.proximityIndicator.strokeCircle(myPos.x, myPos.y, PROXIMITY_RANGE);
   }
 
   private updateLineOfSight(): void {
@@ -607,7 +668,7 @@ export class SmartNPC implements Character {
       .map((char) => char!.name);
 
     const availableTools = this.getAvailableTools();
-    
+
     // Include only messages this NPC actually heard
     const heardMessages = this.getHeardMessages();
     const contextHistory = heardMessages.slice(-8); // More context for better responses
@@ -637,82 +698,86 @@ export class SmartNPC implements Character {
     if (this.customGoals.length > 0) {
       return this.customGoals;
     }
-    
+
     const name = this.name.toLowerCase();
-    
-    if (name.includes('doctor') || name.includes('thompson')) {
+
+    if (name.includes("doctor") || name.includes("thompson")) {
       return [
         "Investigate the mysterious illness affecting townspeople",
-        "Gather symptoms and medical information from residents", 
+        "Gather symptoms and medical information from residents",
         "Find the source of the strange ailments",
-        "Document unusual patient behaviors and patterns"
+        "Document unusual patient behaviors and patterns",
       ];
     }
-    
-    if (name.includes('sheriff') || name.includes('martinez')) {
+
+    if (name.includes("sheriff") || name.includes("martinez")) {
       return [
         "Maintain law and order in the town",
-        "Investigate reports of strange occurrences", 
+        "Investigate reports of strange occurrences",
         "Question strangers and newcomers",
         "Protect townspeople from potential threats",
-        "Gather information about the Whispering Stones incidents"
+        "Gather information about the Whispering Stones incidents",
       ];
     }
-    
-    if (name.includes('sage') || name.includes('eleanor')) {
+
+    if (name.includes("sage") || name.includes("eleanor")) {
       return [
         "Research the ancient history of the Whispering Stones",
         "Decode old texts and manuscripts about the town's past",
         "Share knowledge with those who seek understanding",
         "Uncover the truth behind the mystical events",
-        "Preserve important historical information"
+        "Preserve important historical information",
       ];
     }
-    
-    if (name.includes('sarah')) {
+
+    if (name.includes("sarah")) {
       return [
         "Gather gossip and information from townspeople and visitors",
         "Help newcomers feel welcome while protecting town secrets",
         "Keep track of who's coming and going",
         "Share local knowledge and rumors",
-        "Maintain her position as the town's information hub"
+        "Maintain her position as the town's information hub",
       ];
     }
-    
-    if (name.includes('marcus') || name.includes('webb')) {
+
+    if (name.includes("marcus") || name.includes("webb")) {
       return [
         "Identify profitable business opportunities in town",
         "Investigate the commercial potential of recent strange events",
         "Build relationships with key townspeople",
         "Gather information about valuable resources or artifacts",
-        "Establish trade connections and partnerships"
+        "Establish trade connections and partnerships",
       ];
     }
-    
+
     // Default goals for other NPCs
     return [
       "Interact with townspeople and visitors",
       "Share information about local events",
-      "Maintain daily routines and responsibilities"
+      "Maintain daily routines and responsibilities",
     ];
   }
 
   private buildSpatialContext(): any {
     const myPos = this.getPosition();
-    
+
     // Get known landmarks
-    const knownLandmarks = Array.from(this.discoveredLocations.entries()).map(([key, location]) => ({
-      name: location.name,
-      key: key,
-      x: location.x,
-      y: location.y,
-      distance: Math.round(Phaser.Math.Distance.Between(myPos.x, myPos.y, location.x, location.y))
-    }));
+    const knownLandmarks = Array.from(this.discoveredLocations.entries()).map(
+      ([key, location]) => ({
+        name: location.name,
+        key: key,
+        x: location.x,
+        y: location.y,
+        distance: Math.round(
+          Phaser.Math.Distance.Between(myPos.x, myPos.y, location.x, location.y)
+        ),
+      })
+    );
 
     // Get discovered characters with their last known positions
     const discoveredCharacterPositions = Array.from(this.discoveredCharacters)
-      .map(charId => {
-        const char = this.roomCharacters.find(c => c.id === charId);
+      .map((charId) => {
+        const char = this.roomCharacters.find((c) => c.id === charId);
         if (char) {
           const pos = char.getPosition();
           return {
@@ -720,17 +785,19 @@ export class SmartNPC implements Character {
             id: charId,
             x: pos.x,
             y: pos.y,
-            distance: Math.round(Phaser.Math.Distance.Between(myPos.x, myPos.y, pos.x, pos.y))
+            distance: Math.round(
+              Phaser.Math.Distance.Between(myPos.x, myPos.y, pos.x, pos.y)
+            ),
           };
         }
         return null;
       })
-      .filter(char => char !== null);
+      .filter((char) => char !== null);
 
     // Get discovered objects with positions
     const discoveredObjectPositions = Array.from(this.discoveredObjects)
-      .map(objId => {
-        const obj = this.roomObjects.find(o => o.id === objId);
+      .map((objId) => {
+        const obj = this.roomObjects.find((o) => o.id === objId);
         if (obj) {
           const pos = obj.getPosition();
           return {
@@ -738,19 +805,25 @@ export class SmartNPC implements Character {
             id: objId,
             x: pos.x,
             y: pos.y,
-            distance: Math.round(Phaser.Math.Distance.Between(myPos.x, myPos.y, pos.x, pos.y))
+            distance: Math.round(
+              Phaser.Math.Distance.Between(myPos.x, myPos.y, pos.x, pos.y)
+            ),
           };
         }
         return null;
       })
-      .filter(obj => obj !== null);
+      .filter((obj) => obj !== null);
 
     return {
       currentPosition: { x: Math.round(myPos.x), y: Math.round(myPos.y) },
       knownLandmarks: knownLandmarks.sort((a, b) => a.distance - b.distance),
-      discoveredCharacters: discoveredCharacterPositions.sort((a, b) => a.distance - b.distance),
-      discoveredObjects: discoveredObjectPositions.sort((a, b) => a.distance - b.distance),
-      mapBounds: { width: 2400, height: 1800 }
+      discoveredCharacters: discoveredCharacterPositions.sort(
+        (a, b) => a.distance - b.distance
+      ),
+      discoveredObjects: discoveredObjectPositions.sort(
+        (a, b) => a.distance - b.distance
+      ),
+      mapBounds: { width: 2400, height: 1800 },
     };
   }
 
@@ -759,35 +832,34 @@ export class SmartNPC implements Character {
 
     // Only add speak tool if someone is within proximity (1-2 tiles)
     if (this.isAnyoneNearby()) {
-      tools.push(
-        { 
-          name: "speak", 
-          description: "Say something to nearby characters",
-          parameters: { message: "string" }
-        }
-      );
+      tools.push({
+        name: "speak",
+        description: "Say something to nearby characters",
+        parameters: { message: "string" },
+      });
     }
 
     // Add move_to tool for intelligent pathfinding
-    tools.push(
-      {
-        name: "move_to",
-        description: "Move to a specific location using pathfinding. Can use coordinates (x,y) or landmark names like 'hospital', 'library', 'town_center'",
-        parameters: { 
-          target: "string - either 'x,y' coordinates or landmark name like 'hospital', 'library', 'police_station'" 
-        }
-      }
-    );
+    tools.push({
+      name: "move_to",
+      description:
+        "Move to a specific location using pathfinding. Can use coordinates (x,y) or landmark names like 'hospital', 'library', 'town_center'",
+      parameters: {
+        target:
+          "string - either 'x,y' coordinates or landmark name like 'hospital', 'library', 'police_station'",
+      },
+    });
 
     // Add abandon_path tool if currently pathfinding
-    if (this.currentPath.length > 0 && this.pathIndex < this.currentPath.length) {
-      tools.push(
-        {
-          name: "abandon_path",
-          description: `Stop pathfinding to ${this.pathTarget} and do something else instead.`,
-          parameters: {}
-        }
-      );
+    if (
+      this.currentPath.length > 0 &&
+      this.pathIndex < this.currentPath.length
+    ) {
+      tools.push({
+        name: "abandon_path",
+        description: `Stop pathfinding to ${this.pathTarget} and do something else instead.`,
+        parameters: {},
+      });
     }
 
     // Add special tools based on role
@@ -795,25 +867,29 @@ export class SmartNPC implements Character {
       tools.push(
         {
           name: "take_note",
-          description: "Record an important discovery, conversation, or clue for the player's reference",
-          parameters: { 
+          description:
+            "Record an important discovery, conversation, or clue for the player's reference",
+          parameters: {
             note: "string - the important information to record",
-            category: "string - category like 'clue', 'character', 'location', 'event'"
-          }
+            category:
+              "string - category like 'clue', 'character', 'location', 'event'",
+          },
         },
         {
           name: "give_hint",
-          description: "Provide a helpful hint about what the player should do next or where to investigate",
+          description:
+            "Provide a helpful hint about what the player should do next or where to investigate",
           parameters: {
-            hint: "string - the helpful guidance to provide"
-          }
+            hint: "string - the helpful guidance to provide",
+          },
         },
         {
           name: "explain_controls",
-          description: "Explain how to interact with the game world, NPCs, or objects",
+          description:
+            "Explain how to interact with the game world, NPCs, or objects",
           parameters: {
-            explanation: "string - the control or interaction explanation"
-          }
+            explanation: "string - the control or interaction explanation",
+          },
         }
       );
       // Guide doesn't get movement tools - it follows the player automatically
@@ -821,9 +897,10 @@ export class SmartNPC implements Character {
     }
 
     // Always include basic tools
-    tools.push(
-      { name: "wait", description: "Do nothing and observe the surroundings" }
-    );
+    tools.push({
+      name: "wait",
+      description: "Do nothing and observe the surroundings",
+    });
 
     // Add movement tools in random order
     const movementTools = [
@@ -842,9 +919,9 @@ export class SmartNPC implements Character {
       {
         name: "move_west",
         description: "Move west (left) to explore that area",
-      }
+      },
     ];
-    
+
     // Shuffle movement tools to prevent bias
     Phaser.Utils.Array.Shuffle(movementTools);
     tools.push(...movementTools);
@@ -885,11 +962,17 @@ export class SmartNPC implements Character {
   }
 
   public onPlayerProximityEnter(distance: number): void {
-    console.log(`[PROMPT] [EVENT] ${this.name}: Player entered proximity - triggering greeting event`);
-    this.performAIAction('player_proximity', { 
-      player: 'player',
-      distance: distance
-    });
+    console.log(
+      `[PROMPT] [EVENT] ${this.name}: Player entered proximity - triggering greeting event`
+    );
+    
+    // Small delay to allow conversation messages to be updated
+    setTimeout(() => {
+      this.performAIAction("player_proximity", {
+        player: "player",
+        distance: distance,
+      });
+    }, 100);
   }
 
   public onPlayerProximityExit(distance: number): void {
@@ -905,24 +988,38 @@ export class SmartNPC implements Character {
     const myPos = this.getPosition();
     const PROXIMITY_RANGE = 96; // 2 tiles at 48px per tile
 
-    console.log(`🔍 ${this.name}: Checking proximity - my position: (${Math.round(myPos.x)}, ${Math.round(myPos.y)})`);
-    
+    console.log(
+      `🔍 ${this.name}: Checking proximity - my position: (${Math.round(
+        myPos.x
+      )}, ${Math.round(myPos.y)})`
+    );
+
     // Check if any character (including player) is within proximity
-    const nearbyCharacters = this.roomCharacters.filter(char => {
+    const nearbyCharacters = this.roomCharacters.filter((char) => {
       if (char.id === this.id) return false; // Don't count self
-      
+
       const charPos = char.getPosition();
       const distance = Phaser.Math.Distance.Between(
-        myPos.x, myPos.y,
-        charPos.x, charPos.y
+        myPos.x,
+        myPos.y,
+        charPos.x,
+        charPos.y
       );
-      
-      console.log(`🔍 ${this.name}: Distance to ${char.id}: ${Math.round(distance)} (range: ${PROXIMITY_RANGE})`);
-      
+
+      console.log(
+        `🔍 ${this.name}: Distance to ${char.id}: ${Math.round(
+          distance
+        )} (range: ${PROXIMITY_RANGE})`
+      );
+
       return distance < PROXIMITY_RANGE;
     });
 
-    console.log(`🔍 ${this.name}: Found ${nearbyCharacters.length} nearby characters: [${nearbyCharacters.map(c => c.id).join(', ')}]`);
+    console.log(
+      `🔍 ${this.name}: Found ${
+        nearbyCharacters.length
+      } nearby characters: [${nearbyCharacters.map((c) => c.id).join(", ")}]`
+    );
     return nearbyCharacters.length > 0;
   }
 
@@ -940,7 +1037,7 @@ export class SmartNPC implements Character {
     return distance < 80;
   }
 
-  private async executeAction(
+  protected async executeAction(
     action: string,
     parameters?: any
   ): Promise<{ success: boolean; message: string }> {
@@ -980,28 +1077,42 @@ export class SmartNPC implements Character {
 
       case "take_note":
         if (parameters?.note) {
-          return this.takeNote(parameters.note, parameters.category || "general");
+          return this.takeNote(
+            parameters.note,
+            parameters.category || "general"
+          );
         }
         return { success: false, message: "No note content provided" };
 
       case "give_hint":
         if (parameters?.hint) {
           this.showSpeech(`💡 Hint: ${parameters.hint}`);
-          return { success: true, message: `Provided hint: ${parameters.hint}` };
+          return {
+            success: true,
+            message: `Provided hint: ${parameters.hint}`,
+          };
         }
         return { success: false, message: "No hint provided" };
 
       case "explain_controls":
         if (parameters?.explanation) {
           this.showSpeech(`🎮 ${parameters.explanation}`);
-          return { success: true, message: `Explained controls: ${parameters.explanation}` };
+          return {
+            success: true,
+            message: `Explained controls: ${parameters.explanation}`,
+          };
         }
         return { success: false, message: "No explanation provided" };
 
       case "speak":
         if (parameters?.message) {
-          console.log(`💬 CONVO ${this.name}: Raw message parameter:`, JSON.stringify(parameters.message));
-          console.log(`💬 CONVO ${this.name}: Message length: ${parameters.message.length}`);
+          console.log(
+            `💬 CONVO ${this.name}: Raw message parameter:`,
+            JSON.stringify(parameters.message)
+          );
+          console.log(
+            `💬 CONVO ${this.name}: Message length: ${parameters.message.length}`
+          );
           console.log(`💬 CONVO ${this.name}: "${parameters.message}"`);
           this.showSpeech(parameters.message);
           // Emit as town speech
@@ -1115,14 +1226,14 @@ export class SmartNPC implements Character {
                   console.log(
                     `📝 ${this.name} -> ${result.target}: ${result.message}`
                   );
-                  
+
                   // Emit action to town chat with the actual result message
-                  this.scene.events.emit('town-action', {
+                  this.scene.events.emit("town-action", {
                     actor: this.name,
                     action: result.message,
-                    timestamp: Date.now()
+                    timestamp: Date.now(),
                   });
-                  
+
                   resolve(result);
                 }
               );
@@ -1168,8 +1279,13 @@ export class SmartNPC implements Character {
     }
 
     // Use pathfinding to move
-    const path = this.pathfinding.findPath(currentPos.x, currentPos.y, targetX, targetY);
-    
+    const path = this.pathfinding.findPath(
+      currentPos.x,
+      currentPos.y,
+      targetX,
+      targetY
+    );
+
     if (path.length > 1) {
       const target = path[1]; // Next step in path
       this.moveToPosition(target.x, target.y);
@@ -1191,13 +1307,13 @@ export class SmartNPC implements Character {
     // Calculate direction for animation
     const dx = clampedX - this.sprite.x;
     const dy = clampedY - this.sprite.y;
-    
+
     if (Math.abs(dx) > Math.abs(dy)) {
-      this.lastDirection = dx > 0 ? 'right' : 'left';
+      this.lastDirection = dx > 0 ? "right" : "left";
     } else {
-      this.lastDirection = dy > 0 ? 'down' : 'up';
+      this.lastDirection = dy > 0 ? "down" : "up";
     }
-    
+
     // Play walking animation
     this.playWalkAnimation();
 
@@ -1228,15 +1344,20 @@ export class SmartNPC implements Character {
     });
   }
 
-  private getSceneBounds(): { minX: number, maxX: number, minY: number, maxY: number } {
+  private getSceneBounds(): {
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+  } {
     // Default bounds for town scene
     let bounds = { minX: 80, maxX: 2320, minY: 120, maxY: 1680 };
-    
+
     // Hospital scene bounds
-    if (this.scene.scene.key === 'HospitalScene') {
+    if (this.scene.scene.key === "HospitalScene") {
       bounds = { minX: 50, maxX: 750, minY: 50, maxY: 550 };
     }
-    
+
     return bounds;
   }
 
@@ -1285,8 +1406,10 @@ export class SmartNPC implements Character {
     position: { x: number; y: number };
     timestamp: number;
   }) => {
-    console.log(`🔍 ${this.name}: onTownSpeech - speaker: ${data.speaker}, speakerId: ${data.speakerId}, myId: ${this.id}`);
-    
+    console.log(
+      `🔍 ${this.name}: onTownSpeech - speaker: ${data.speaker}, speakerId: ${data.speakerId}, myId: ${this.id}`
+    );
+
     // Don't respond to own speech
     if (data.speakerId === this.id) {
       console.log(`🚫 ${this.name}: Ignoring own speech`);
@@ -1303,11 +1426,19 @@ export class SmartNPC implements Character {
 
     const HEARING_RANGE = 120; // Reduced from 200 to make conversations more intimate
     if (distance > HEARING_RANGE) {
-      console.log(`🔇 ${this.name}: Too far from ${data.speaker} (distance: ${Math.round(distance)}, range: ${HEARING_RANGE})`);
+      console.log(
+        `🔇 ${this.name}: Too far from ${data.speaker} (distance: ${Math.round(
+          distance
+        )}, range: ${HEARING_RANGE})`
+      );
       return;
     }
 
-    console.log(`👂 ${this.name}: Heard ${data.speaker} nearby (distance: ${Math.round(distance)})`);
+    console.log(
+      `👂 ${this.name}: Heard ${data.speaker} nearby (distance: ${Math.round(
+        distance
+      )})`
+    );
 
     // Find all NPCs who can hear this message
     const hearers = this.findNPCsInRange(data.position, HEARING_RANGE);
@@ -1317,33 +1448,45 @@ export class SmartNPC implements Character {
       role: "user",
       content: data.message,
       name: data.speakerId,
-      hearers: hearers
+      hearers: hearers,
     });
 
     // Check if we should respond to this speech
     if (this.shouldEngageWithSpeech(data)) {
       // Update event time to prevent timed actions
       this.lastEventTime = Date.now();
-      
+
       // Cancel any pending timed action since we have an event
       if (this.actionTimer) {
-        console.log(`🚫 ${this.name}: Cancelling timed action due to speech event`);
+        console.log(
+          `🚫 ${this.name}: Cancelling timed action due to speech event`
+        );
         this.actionTimer.destroy();
         this.actionTimer = undefined;
       }
-      
-      console.log(`🎯 ${this.name}: Triggering event-driven response to speech from ${data.speaker}: "${data.message}"`);
-      
+
+      console.log(
+        `🎯 ${this.name}: Triggering event-driven response to speech from ${data.speaker}: "${data.message}"`
+      );
+
       // Trigger immediate event-driven response
-      this.performAIAction('speech_heard', { speaker: data.speaker, message: data.message })
+      this.performAIAction("speech_heard", {
+        speaker: data.speaker,
+        message: data.message,
+      })
         .then(() => {
           console.log(`✅ ${this.name}: Completed event response to speech`);
         })
         .catch((error) => {
-          console.error(`❌ ${this.name}: Error in speech event response:`, error);
+          console.error(
+            `❌ ${this.name}: Error in speech event response:`,
+            error
+          );
         });
     } else {
-      console.log(`🚫 ${this.name}: Not responding to speech - shouldEngage returned false`);
+      console.log(
+        `🚫 ${this.name}: Not responding to speech - shouldEngage returned false`
+      );
     }
   };
 
@@ -1353,8 +1496,10 @@ export class SmartNPC implements Character {
     message: string;
   }): boolean {
     // Always respond to player messages (100% engagement)
-    if (data.speakerId === 'player') {
-      console.log(`🎯 ${this.name}: Will respond to player message: "${data.message}"`);
+    if (data.speakerId === "player") {
+      console.log(
+        `🎯 ${this.name}: Will respond to player message: "${data.message}"`
+      );
       this.isInPlayerConversation = true; // Enter conversation mode
       return true;
     }
@@ -1400,9 +1545,13 @@ export class SmartNPC implements Character {
   // Legacy methods removed - NPCs now use unified tool system
 
   public showSpeech(message: string): void {
-    console.log(`🗨️ ${this.name}: showSpeech called with message length: ${message.length}`);
+    console.log(
+      `🗨️ ${this.name}: showSpeech called with message length: ${message.length}`
+    );
     console.log(`🗨️ ${this.name}: showSpeech message: "${message}"`);
-    console.log(`🗨️ ${this.name}: Showing speech bubble at (${this.sprite.x}, ${this.sprite.y})`);
+    console.log(
+      `🗨️ ${this.name}: Showing speech bubble at (${this.sprite.x}, ${this.sprite.y})`
+    );
     this.speechBubble.show(
       this.sprite.x,
       this.sprite.y - 40,
@@ -1430,47 +1579,69 @@ export class SmartNPC implements Character {
 
     // All messages should go through town speech system - no direct processing
     if (sender.id === "player") {
-      console.log(`🔄 ${this.name}: Redirecting player message to town speech system`);
+      console.log(
+        `🔄 ${this.name}: Redirecting player message to town speech system`
+      );
       // The message will be processed via onTownSpeech when the town-speech event is emitted
     }
   }
 
-  private findNPCsInRange(position: { x: number; y: number }, range: number): string[] {
+  private findNPCsInRange(
+    position: { x: number; y: number },
+    range: number
+  ): string[] {
     const hearers: string[] = [];
-    
+
     // Always include the player if in range
-    const player = this.roomCharacters.find(c => c.id === 'player');
+    const player = this.roomCharacters.find((c) => c.id === "player");
     if (player) {
       const distance = Phaser.Math.Distance.Between(
-        position.x, position.y,
-        player.getPosition().x, player.getPosition().y
+        position.x,
+        position.y,
+        player.getPosition().x,
+        player.getPosition().y
       );
       if (distance <= range) {
-        hearers.push('player');
+        hearers.push("player");
       }
     }
-    
+
     // Include all NPCs in range
-    this.roomCharacters.forEach(char => {
-      if (char.id !== 'player' && char.id !== this.id) {
+    this.roomCharacters.forEach((char) => {
+      if (char.id !== "player" && char.id !== this.id) {
         const distance = Phaser.Math.Distance.Between(
-          position.x, position.y,
-          char.getPosition().x, char.getPosition().y
+          position.x,
+          position.y,
+          char.getPosition().x,
+          char.getPosition().y
         );
         if (distance <= range) {
           hearers.push(char.id);
         }
       }
     });
-    
+
     return hearers;
   }
 
+  stopAI(): void {
+    console.log(`🛑 Stopping AI for ${this.name}`);
+    this.aiActive = false;
+    
+    // Clear any pending timeouts
+    if (this.pendingLLMRequest) {
+      // Cancel pending request if possible
+      this.pendingLLMRequest = null;
+    }
+  }
+
   private getHeardMessages() {
-    return this.conversationMessages.filter(msg => 
-      !msg.hearers || msg.hearers.includes(this.id) || msg.name === this.id
+    return this.conversationMessages.filter(
+      (msg) =>
+        !msg.hearers || msg.hearers.includes(this.id) || msg.name === this.id
     );
   }
+
   public setRoomContext(
     objects: InteractiveObject[],
     characters: Character[],
@@ -1481,7 +1652,6 @@ export class SmartNPC implements Character {
     this.roomGrid = grid;
   }
 
-  
   public setGoals(goals: string[]): void {
     this.customGoals = goals;
   }
@@ -1502,25 +1672,40 @@ export class SmartNPC implements Character {
   }
 
   private followPlayer(): void {
-    const player = this.roomCharacters.find(c => c.id === "player");
+    const player = this.roomCharacters.find((c) => c.id === "player");
     if (!player) return;
 
     const playerPos = player.getPosition();
     const myPos = this.getPosition();
-    const distance = Phaser.Math.Distance.Between(myPos.x, myPos.y, playerPos.x, playerPos.y);
+    const distance = Phaser.Math.Distance.Between(
+      myPos.x,
+      myPos.y,
+      playerPos.x,
+      playerPos.y
+    );
 
     // Follow if player is too far away (more than speaking range) and not already moving
     const FOLLOW_DISTANCE = 96; // Same as speaking range
     if (distance > FOLLOW_DISTANCE && !this.isMoving) {
       // Calculate position at speaking range behind the player
       const followDistance = 80; // Stay just within speaking range
-      const angle = Phaser.Math.Angle.Between(playerPos.x, playerPos.y, myPos.x, myPos.y);
+      const angle = Phaser.Math.Angle.Between(
+        playerPos.x,
+        playerPos.y,
+        myPos.x,
+        myPos.y
+      );
       const targetX = playerPos.x + Math.cos(angle) * followDistance;
       const targetY = playerPos.y + Math.sin(angle) * followDistance;
 
       // Use pathfinding system for smooth movement
-      const path = this.pathfinding.findPath(myPos.x, myPos.y, targetX, targetY);
-      
+      const path = this.pathfinding.findPath(
+        myPos.x,
+        myPos.y,
+        targetX,
+        targetY
+      );
+
       if (path.length > 1) {
         this.currentPath = path.slice(1);
         this.pathIndex = 0;

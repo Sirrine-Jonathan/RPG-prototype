@@ -55,14 +55,8 @@ export class MainMenuScene extends Scene {
       .setInteractive()
       .on("pointerdown", () => this.scene.start('LevelTestScene'));
 
-    const testTownBtn = this.add
-      .text(width / 2, height * 0.8, "Test Town (Editor)", buttonStyle)
-      .setOrigin(0.5)
-      .setInteractive()
-      .on("pointerdown", () => this.scene.start('TestTownScene'));
-
     // Button hover effects
-    [newGameBtn, loadGameBtn, levelTestBtn, testTownBtn].forEach((btn) => {
+    [newGameBtn, loadGameBtn, levelTestBtn].forEach((btn) => {
       btn.on("pointerover", () => btn.setStyle({ backgroundColor: "#003300" }));
       btn.on("pointerout", () => btn.setStyle({ backgroundColor: "#001100" }));
     });
@@ -70,7 +64,7 @@ export class MainMenuScene extends Scene {
 
   startNewGame() {
     console.log("Starting new game...");
-    this.scene.start("TownOverworldScene");
+    this.scene.start("TownScene");
   }
 
   loadGame() {

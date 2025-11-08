@@ -96,10 +96,17 @@ export abstract class GameplayScene extends BaseScene {
     this.updatePlayerProximityIndicator();
     
     this.cameras.main.startFollow(this.player);
+    
+    // Ensure input is properly set up after player creation
+    if (!this.cursors || !this.wasd) {
+      this.setupInput();
+    }
   }
 
   protected movePlayerTo(targetX: number, targetY: number): void {
+    console.log(`🎯 Click-to-move: from (${this.player.x}, ${this.player.y}) to (${targetX}, ${targetY})`);
     const path = this.pathfinding.findPath(this.player.x, this.player.y, targetX, targetY);
+    console.log(`🎯 Pathfinding result: ${path.length} steps`);
     
     if (path.length > 1) {
       this.currentPath = path.slice(1);
@@ -225,19 +232,25 @@ export abstract class GameplayScene extends BaseScene {
       }
 
       if (moving) {
-        this.player.play(`adam_walk_${this.lastDirection}`, true);
+        if (this.player && this.player.play) {
+          this.player.play(`adam_walk_${this.lastDirection}`, true);
+        }
         // Smoothly transition camera back to player when moving with keyboard
         if (!this.cameras.main.followTarget) {
           this.smoothFollowPlayer();
         }
       } else {
-        this.player.play(`adam_idle_${this.lastDirection}`, true);
+        if (this.player && this.player.play) {
+          this.player.play(`adam_idle_${this.lastDirection}`, true);
+        }
       }
 
       // Keep player in bounds
-      const bounds = this.getPlayerBounds();
-      this.player.x = Phaser.Math.Clamp(this.player.x, bounds.minX, bounds.maxX);
-      this.player.y = Phaser.Math.Clamp(this.player.y, bounds.minY, bounds.maxY);
+      if (this.player) {
+        const bounds = this.getPlayerBounds();
+        this.player.x = Phaser.Math.Clamp(this.player.x, bounds.minX, bounds.maxX);
+        this.player.y = Phaser.Math.Clamp(this.player.y, bounds.minY, bounds.maxY);
+      }
     }
   }
 
@@ -312,5 +325,18 @@ export abstract class GameplayScene extends BaseScene {
     const returnPosition = this.getReturnPosition();
     
     this.scene.start(returnScene, { playerPosition: returnPosition });
+  }
+
+  shutdown() {
+    // Stop all NPCs when leaving the scene
+    if (this.proximityService) {
+      const allNPCs = this.proximityService.getAllNPCs();
+      console.log(`🛑 Shutting down ${allNPCs.length} NPCs in ${this.scene.key}`);
+      allNPCs.forEach(npc => {
+        if (npc.stopAI) {
+          npc.stopAI();
+        }
+      });
+    }
   }
 }

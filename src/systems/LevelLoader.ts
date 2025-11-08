@@ -1,4 +1,5 @@
 import { Scene } from 'phaser';
+import { Debug } from '../utils/Debug';
 
 export interface LayerData {
     tileset: string;
@@ -151,8 +152,8 @@ export class LevelLoader {
             switch (objData.type) {
                 case 'spawn':
                     if (objData.subtype === 'player') {
-                        // Create player spawn marker (invisible in game, used for positioning)
-                        gameObject = this.scene.add.circle(worldX, worldY, 8, 0x00ff00, 0.5);
+                        // Create player spawn marker (visible only in debug mode)
+                        gameObject = this.scene.add.circle(worldX, worldY, 8, 0x00ff00, Debug.enabled ? 0.5 : 0);
                         (gameObject as any).objectData = objData;
                     }
                     break;

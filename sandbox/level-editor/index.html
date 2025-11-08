@@ -384,6 +384,105 @@
     </style>
   </head>
   <body>
+    <!-- Portal Properties Modal -->
+    <div id="portalModal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Portal Properties</h3>
+          <span class="close" onclick="document.getElementById('portalModal').style.display='none'">&times;</span>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="portalId">Portal ID:</label>
+            <input type="text" id="portalId" placeholder="e.g., town_hospital" />
+          </div>
+          <div class="form-group">
+            <label for="targetScene">Target Scene:</label>
+            <select id="targetScene">
+              <option value="TownScene">Town Scene</option>
+              <option value="HospitalScene">Hospital Scene</option>
+              <option value="PoliceStationScene">Police Station Scene</option>
+              <option value="LibraryScene">Library Scene</option>
+              <option value="SchoolScene">School Scene</option>
+              <option value="GroceryStoreScene">Grocery Store Scene</option>
+              <option value="TavernScene">Tavern Scene</option>
+              <option value="ArtMuseumScene">Art Museum Scene</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="targetPortalId">Target Portal ID:</label>
+            <input type="text" id="targetPortalId" placeholder="e.g., hospital_town" />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button onclick="document.getElementById('portalModal').style.display='none'">Cancel</button>
+          <button id="confirmPortal">Place Portal</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Spawn Properties Modal -->
+    <div id="spawnModal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Spawn Point Properties</h3>
+          <span class="close" onclick="document.getElementById('spawnModal').style.display='none'">&times;</span>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="spawnId">Spawn ID:</label>
+            <input type="text" id="spawnId" placeholder="e.g., hospital_entrance" />
+          </div>
+          <div class="form-group">
+            <label>
+              <input type="checkbox" id="isDefaultSpawn" />
+              Default spawn point for this scene
+            </label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button onclick="document.getElementById('spawnModal').style.display='none'">Cancel</button>
+          <button id="confirmSpawn">Place Spawn</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Building Properties Modal -->
+    <div id="buildingModal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Building Properties</h3>
+          <span class="close" onclick="document.getElementById('buildingModal').style.display='none'">&times;</span>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="buildingName">Building Name:</label>
+            <input type="text" id="buildingName" placeholder="Enter building name..." />
+          </div>
+          <div class="form-group">
+            <label for="buildingScene">Target Scene:</label>
+            <select id="buildingScene">
+              <option value="HospitalScene">Hospital Scene</option>
+              <option value="PoliceStationScene">Police Station Scene</option>
+              <option value="LibraryScene">Library Scene</option>
+              <option value="SchoolScene">School Scene</option>
+              <option value="GroceryStoreScene">Grocery Store Scene</option>
+              <option value="TavernScene">Tavern Scene</option>
+              <option value="ArtMuseumScene">Art Museum Scene</option>
+              <option value="SecurityStationScene">Security Station Scene</option>
+              <option value="ResearchLabScene">Research Lab Scene</option>
+              <option value="MedicalBayScene">Medical Bay Scene</option>
+              <option value="EngineeringBayScene">Engineering Bay Scene</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button onclick="document.getElementById('buildingModal').style.display='none'">Cancel</button>
+          <button id="confirmBuilding">Place Building</button>
+        </div>
+      </div>
+    </div>
+
     <div class="sidebar">
       <div class="resize-handle resize-handle-right"></div>
 
@@ -450,6 +549,21 @@
           <div class="object-palette">
             <div class="object-item" data-type="spawn" data-subtype="player">
               ⭐ Player Spawn
+            </div>
+            <div class="object-item" data-type="portal" data-subtype="scene_exit">
+              🚪 Portal
+            </div>
+            <div class="object-item" data-type="spawn" data-subtype="portal">
+              📍 Portal Spawn
+            </div>
+            <div class="object-item" data-type="npc" data-subtype="merchant">
+              👤 NPC - Merchant
+            </div>
+            <div class="object-item" data-type="npc" data-subtype="guard">
+              🛡️ NPC - Guard
+            </div>
+            <div class="object-item" data-type="npc" data-subtype="villager">
+              👥 NPC - Villager
             </div>
           </div>
         </div>

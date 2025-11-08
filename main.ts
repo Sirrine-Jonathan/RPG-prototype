@@ -16,6 +16,8 @@ import { TileIndexViewerScene } from "./src/scenes/TileIndexViewerScene";
 import { PropsViewerScene } from "./src/scenes/PropsViewerScene";
 import { LevelTestScene } from "./src/scenes/LevelTestScene";
 import { TownScene } from "./src/scenes/TownScene";
+import { NewTownScene } from "./src/scenes/NewTownScene";
+import { GameManager } from "./src/core/GameManager";
 
 const config = {
   type: AUTO,
@@ -45,15 +47,26 @@ const config = {
     PropsViewerScene,
     LevelTestScene,
     TownScene,
+    NewTownScene, // Add new architecture scene
   ],
 };
 
 const game = new Game(config);
 
+// Initialize the new architecture
+const gameManager = GameManager.getInstance();
+gameManager.initialize(game);
+
 // Expose game to window for debugging
 (window as any).game = game;
+(window as any).gameManager = gameManager;
 
 // Handle window resize
 window.addEventListener("resize", () => {
   game.scale.resize(window.innerWidth, window.innerHeight);
+});
+
+// Add cleanup on page unload
+window.addEventListener('beforeunload', () => {
+  gameManager.shutdown();
 });

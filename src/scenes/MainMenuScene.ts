@@ -64,7 +64,7 @@ export class MainMenuScene extends Scene {
 
   startNewGame() {
     console.log("Starting new game...");
-    this.scene.start("TownScene");
+    this.scene.start("NewTownScene"); // Use new architecture
   }
 
   loadGame() {

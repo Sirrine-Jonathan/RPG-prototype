@@ -1,6 +1,7 @@
 import { AIService, NPCContext } from "../services/AIService";
 import { SpeechBubble } from "../ui/SpeechBubble";
 import { BaseActor, Tool } from "./BaseActor";
+import { EventBus } from "../systems/EventBus";
 
 export class PersistentNPC extends BaseActor {
   public id: string;
@@ -28,8 +29,12 @@ export class PersistentNPC extends BaseActor {
   protected playerPosition: { x: number; y: number } = { x: 0, y: 0 };
   protected followTimer?: Phaser.Time.TimerEvent;
 
-  private readonly MIN_TIMEOUT = 15000; // 15 seconds minimum
-  private readonly MAX_TIMEOUT = 25000; // 25 seconds maximum
+  private readonly MIN_TIMEOUT = 15000; // 15 seconds minimum (normal)
+  private readonly MAX_TIMEOUT = 25000; // 25 seconds maximum (normal)
+  private readonly INITIAL_MIN_TIMEOUT = 2000; // 2 seconds minimum (first action)
+  private readonly INITIAL_MAX_TIMEOUT = 5000; // 5 seconds maximum (first action)
+  
+  private isFirstTimeout: boolean = true;
 
   constructor(scene: Phaser.Scene, config: any) {
     super(); // Call BaseActor constructor
@@ -132,12 +137,11 @@ export class PersistentNPC extends BaseActor {
     if (!this.currentScene) return;
 
     // Listen for our specific timeout event
-    const eventBus = (globalThis as any).eventBus;
-    if (eventBus) {
-      eventBus.subscribe(`${this.id}_timeout_prompt`, () => {
-        this.triggerEvent('timeout_prompt');
-      });
-    }
+    const eventBus = EventBus.getInstance();
+    eventBus.subscribe(`timeout_event_${this.id}`, () => {
+      console.log(`[NPC_FLOW] ${this.name}: Timeout event fired!`);
+      this.triggerEvent('timeout_prompt');
+    });
 
     // Start initial random timeout
     this.startRandomTimeout();
@@ -149,17 +153,21 @@ export class PersistentNPC extends BaseActor {
       this.timeoutHandle.destroy();
     }
 
-    // Random delay between MIN and MAX
-    const delay = Math.random() * (this.MAX_TIMEOUT - this.MIN_TIMEOUT) + this.MIN_TIMEOUT;
+    // Random delay between MIN and MAX (use shorter times for first timeout)
+    const minTimeout = this.isFirstTimeout ? this.INITIAL_MIN_TIMEOUT : this.MIN_TIMEOUT;
+    const maxTimeout = this.isFirstTimeout ? this.INITIAL_MAX_TIMEOUT : this.MAX_TIMEOUT;
+    const delay = Math.random() * (maxTimeout - minTimeout) + minTimeout;
+    
+    // Mark that we've had our first timeout
+    this.isFirstTimeout = false;
     
     this.timeoutHandle = this.currentScene!.time.addEvent({
       delay: delay,
       callback: () => {
         // Fire NPC-specific timeout event
-        const eventBus = (globalThis as any).eventBus;
-        if (eventBus) {
-          eventBus.emit(`${this.id}_timeout_prompt`, {});
-        }
+        const eventBus = EventBus.getInstance();
+        console.log(`[NPC_FLOW] ${this.name}: Firing timeout event after ${Math.round(delay)}ms`);
+        eventBus.emit(`timeout_event_${this.id}`, {});
       },
       callbackScope: this,
       loop: false
@@ -208,11 +216,8 @@ export class PersistentNPC extends BaseActor {
         // Handle specific events here
         await this.handleEvent(eventType, eventData || {});
       } else {
-        console.log(
-          `[NPC_FLOW] ${this.name}: Performing timed action (no recent events)`
-        );
-        // Fallback timed action - trigger a generic timed event
-        this.triggerEvent('timed_action', { reason: 'fallback_timeout' });
+        // This shouldn't happen with the new timeout system
+        console.log(`[NPC_FLOW] ${this.name}: No recent events, but timeout system should handle this`);
       }
 
       // Start new random timeout for next action (unless this was the timeout event)
@@ -230,13 +235,13 @@ export class PersistentNPC extends BaseActor {
 
     let chosenAction: string;
 
-    // For proximity, speech, and timed events, use AI to generate contextual responses
+    // For proximity, speech, and timeout events, use AI to generate contextual responses
     if (
       eventType === "player_nearby" ||
       eventType === "player_left" ||
       eventType === "player_speech" ||
       eventType === "npc_speech_heard" ||
-      eventType === "timed_action"
+      eventType === "timeout_prompt"
     ) {
       try {
         const tools = this.getToolsForAI();
@@ -267,7 +272,7 @@ export class PersistentNPC extends BaseActor {
           contextDescription = `${eventData.speakerName} just said "${eventData.message}" nearby while you're both out in town (${eventData.distance}px away).`;
         } else if (eventType === "player_speech") {
           contextDescription = `A player just said: "${eventData.message}" (${Math.round(eventData.distance)}px away). Respond appropriately to what they said.`;
-        } else if (eventType === "timed_action") {
+        } else if (eventType === "timeout_prompt") {
           contextDescription = `You haven't done anything for a while and want to do something while walking around town outdoors. Choose an action that fits your character.`;
         }
 
@@ -292,9 +297,12 @@ export class PersistentNPC extends BaseActor {
 
         // Build message history - avoid duplicate system messages
         const systemPrompt = this.buildSystemPrompt();
+        
         const conversationMessages = this.conversationHistory.filter(
           (msg) => msg.role !== "system"
         );
+        console.log(`[NPC] ${this.name}: Context -> ${contextDescription} (${conversationMessages.length} history msgs)`);
+        
         const messages = [
           { role: "system", content: systemPrompt },
           ...conversationMessages,
@@ -393,7 +401,7 @@ export class PersistentNPC extends BaseActor {
                     );
                     
                     // Execute the parsed tool
-                    const tool = this.availableTools.find(t => t.name === parsed.name);
+                    const tool = availableTools.find(t => t.name === parsed.name);
                     if (tool && tool.handler) {
                       await tool.handler(parsed.parameters);
                       chosenAction = parsed.name;
@@ -449,8 +457,9 @@ export class PersistentNPC extends BaseActor {
         chosenAction = "ai_failed";
       }
     } else {
-      // No fallback actions - let failures be visible for development  
-      chosenAction = "no_ai_response";
+      // This shouldn't happen - log it as an error
+      console.error(`[NPC_FLOW] ${this.name}: No AI response for event "${eventType}" - this should not happen!`);
+      chosenAction = "ai_failed";
     }
 
     console.log(
@@ -471,10 +480,6 @@ export class PersistentNPC extends BaseActor {
   }
 
   private async handlePlayerInteraction(): Promise<void> {
-    if (this.isInPlayerConversation) return;
-
-    this.isInPlayerConversation = true;
-
     try {
       const tools = this.getToolsForAI();
 
@@ -497,7 +502,7 @@ Do NOT include any narrative text, descriptions, or extra content. Just the JSON
         `[NPC_FLOW] ${this.name}: Direct AI prompt for player interaction`
       );
 
-      const response = await this.aiService.generateResponse(prompt);
+      const response = await this.aiService.generateResponse(prompt, "", this.conversationHistory);
 
       if (response) {
         try {
@@ -521,11 +526,6 @@ Do NOT include any narrative text, descriptions, or extra content. Just the JSON
       );
       this.say("Hello there!");
     }
-
-    // Reset conversation flag after a delay
-    this.currentScene?.time.delayedCall(3000, () => {
-      this.isInPlayerConversation = false;
-    });
   }
 
   // Build system prompt - can be overridden by subclasses
@@ -537,11 +537,6 @@ BEHAVIORAL GUIDELINES:
 - Speak to nearby characters when appropriate
 - Move around naturally when no one is nearby
 - Stay in character and be helpful when approached`;
-  }
-
-  // Handle timed actions through the event system
-  private handleTimedAction(): void {
-    this.triggerEvent('timed_action', { reason: 'periodic_activity' });
   }
 
   // Implement BaseActor abstract method
@@ -839,8 +834,8 @@ BEHAVIORAL GUIDELINES:
       this.nameText = null;
     }
 
-    if (this.actionTimer) {
-      this.actionTimer.destroy();
+    if (this.timeoutHandle) {
+      this.timeoutHandle.destroy();
     }
 
     if (this.speechBubble) {

@@ -15,24 +15,16 @@ export class QuickSpeechUI {
     }
 
     private setupKeyListener(): void {
-        console.log('🎯 QuickSpeechUI: Setting up key listener, keyboard available:', !!this.scene?.input?.keyboard);
         if (!this.scene?.input?.keyboard) return;
         
         const spaceKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
-        console.log('🎯 QuickSpeechUI: Space key created:', spaceKey);
         spaceKey.on('down', () => {
-            console.log('🎯 QuickSpeechUI: Space key pressed! isVisible:', this.isVisible, 'activeElement:', document.activeElement?.tagName, 'isTypingElsewhere:', this.isTypingElsewhere(), 'spaceKey.enabled:', spaceKey.enabled);
-            
             if (document.activeElement?.tagName === 'TEXTAREA') {
-                console.log('🎯 Ignoring spacebar - textarea focused');
                 return;
             }
             
             if (!this.isVisible && !this.isTypingElsewhere()) {
-                console.log('🚀 Showing QuickSpeechUI');
                 this.show();
-            } else {
-                console.log('🎯 Not showing QuickSpeechUI - isVisible:', this.isVisible, 'isTypingElsewhere:', this.isTypingElsewhere());
             }
         });
         
@@ -47,7 +39,6 @@ export class QuickSpeechUI {
     }
 
     private show(): void {
-        console.log('🎯 QuickSpeechUI.show() called, isVisible:', this.isVisible);
         if (this.isVisible) return;
         
         this.isVisible = true;
@@ -56,7 +47,6 @@ export class QuickSpeechUI {
             this.spaceKey.destroy();
             this.spaceKey = undefined;
         }
-        console.log('🎯 About to call createUI()');
         
         if (this.container) {
             // Reuse existing container with a small delay to ensure proper rendering
@@ -69,15 +59,12 @@ export class QuickSpeechUI {
                     // Force a reflow to ensure styles are applied
                     this.container.offsetHeight;
                     this.textarea!.focus();
-                    console.log('🎯 Reused existing container after delay, display:', this.container.style.display, 'visibility:', this.container.style.visibility);
                 }
             }, 10);
-            console.log('🎯 Scheduled container reuse with delay');
         } else {
             // Create new container
             this.createUI();
         }
-        console.log('🎯 show() completed, container exists:', !!this.container);
     }
 
     private hide(): void {
@@ -207,9 +194,7 @@ export class QuickSpeechUI {
         document.body.appendChild(this.container);
 
         // Auto-focus
-        console.log('🎯 About to focus textarea');
         this.textarea.focus();
-        console.log('🎯 Textarea focused, activeElement is now:', document.activeElement?.tagName);
     }
 
     private sendMessage(): void {

@@ -137,27 +137,20 @@ export class AIService {
       }
 
       const data = await response.json();
-      console.log(`🔍 ${context.name}: LLM response data:`, data);
-
       // Parse tool call from response
       if (data.message?.tool_calls?.[0]) {
         const toolCall = data.message.tool_calls[0];
-        console.log(`🔍 ${context.name}: Found tool call:`, toolCall);
-        console.log(
-          `🔍 ${context.name}: Tool call arguments:`,
-          JSON.stringify(toolCall.function.arguments)
-        );
-        console.log(
-          `🔍 ${context.name}: Raw tool call arguments object:`,
-          toolCall.function.arguments
-        );
+        
+        // Validate response format
+        if (!this.validateToolCallResponse(toolCall, context.name)) {
+          console.warn(`⚠️ ${context.name}: Invalid tool call, falling back to text`);
+          const textResponse = this.parseNPCResponse(data.message?.content || "");
+          return textResponse;
+        }
 
         // Check if message parameter is truncated due to apostrophe/quote issues
         if (toolCall.function.arguments?.message) {
           const msg = toolCall.function.arguments.message;
-          console.log(
-            `🔍 ${context.name}: Message parameter: "${msg}" (length: ${msg.length})`
-          );
 
           // Detect incomplete contractions
           if (
@@ -165,9 +158,7 @@ export class AIService {
               /\b(couldn|wouldn|shouldn|can|won|don|isn|aren|wasn|haven|hasn)\b$/
             )
           ) {
-            console.warn(
-              `⚠️ ${context.name}: Message appears truncated due to apostrophe - detected incomplete contraction`
-            );
+            console.warn(`⚠️ ${context.name}: Fixing truncated contraction`);
             // Try to fix common contractions
             const fixed = msg
               .replace(/\bcouldn$/, "couldn't")
@@ -183,7 +174,6 @@ export class AIService {
               .replace(/\bhasn$/, "hasn't");
 
             if (fixed !== msg) {
-              console.log(`🔧 ${context.name}: Auto-fixed message: "${fixed}"`);
               toolCall.function.arguments.message = fixed;
             }
           }
@@ -208,9 +198,6 @@ export class AIService {
             const completion =
               fallbacks[Math.floor(Math.random() * fallbacks.length)];
             const fixed = msg + " " + completion;
-            console.log(
-              `🔧 ${context.name}: Completed incomplete message: "${fixed}"`
-            );
             toolCall.function.arguments.message = fixed;
           }
 
@@ -231,11 +218,8 @@ export class AIService {
       }
 
       // Fallback to text parsing if no tool call
-      console.log(
-        `🔍 ${context.name}: No tool calls found, parsing text response`
-      );
+      console.log(`⚠️ ${context.name}: No tool calls, parsing text`);
       const textResponse = this.parseNPCResponse(data.message?.content || "");
-      console.log(`🔍 ${context.name}: Parsed text response:`, textResponse);
       return textResponse;
     } catch (error) {
       console.warn("AI service failed, using fallback:", error);
@@ -550,6 +534,8 @@ STORY-AWARE BEHAVIOR:
 
     return `You are ${context.name}, an NPC in a mystery RPG game.
 
+CRITICAL IDENTITY: You are ${context.name}, NOT any other character. Never claim to be someone else or copy their identity.
+
 BACKGROUND: ${context.background}
 PERSONALITY: ${context.personality}
 CURRENT LOCATION: ${context.currentLocation}
@@ -561,6 +547,12 @@ AVAILABLE TOOLS:
 ${context.availableTools
   .map((tool) => `- ${tool.name}: ${tool.description}`)
   .join("\n")}
+
+TOOL USAGE REQUIREMENTS:
+- ALWAYS use proper tool calls - never return narrative text
+- Use "speak" tool for all dialogue - never return plain text responses
+- Tool parameters must be objects, not strings
+- For toggle_following, use "follow" parameter (true/false), not "following"
 
 BEHAVIORAL GUIDELINES:
 - CRITICAL: When a player speaks to you directly (says your name, greets you, asks you questions), respond TO THEM directly
@@ -609,7 +601,7 @@ LEARNING FROM FAILURES:
   }
 
   private buildNPCUserPrompt(context: NPCContext): string {
-    return `What do you do next? Choose a tool and explain your reasoning briefly.`;
+    return `You MUST respond with a tool call. Do not write any text. Only use the available tools. Choose one tool now.`;
   }
 
   private parseNPCResponse(content: string): {
@@ -698,46 +690,47 @@ LEARNING FROM FAILURES:
 
   async generateResponseWithTools(messages: any[], tools: any[]): Promise<any> {
     try {
-      console.log(`🔧 AIService: generateResponseWithTools called`);
-      console.log(`🔧 AIService: Messages:`, JSON.stringify(messages, null, 2));
-      console.log(
-        `🔧 AIService: Tools:`,
-        JSON.stringify(
-          tools.map((tool) => tool.function.name),
-          null,
-          2
-        )
-      );
+      const npcName = messages.find(m => m.role === 'system')?.content?.match(/You are (\w+)/)?.[1] || 'Unknown';
+      console.log(`[AI] ${npcName}: Request (${messages.length} msgs, ${tools.length} tools)`);
+      
+      const requestBody = {
+        model: "llama3.2:3b",
+        messages: messages,
+        tools: tools,
+        stream: false,
+        options: {
+          temperature: 0.1,
+        }
+      };
 
       const response = await fetch("http://localhost:11434/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "llama3.2:3b",
-          messages: messages,
-          tools: tools,
-          stream: false,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
-      console.log(`🔧 AIService: Response status:`, response.status);
+      console.log(`[LLM_FLOW] Response Status: ${response.status}`);
 
       if (!response.ok) {
+        console.log(`[LLM_FLOW] ERROR: HTTP ${response.status}`);
         throw new Error(`HTTP ${response.status}`);
       }
 
       const data = await response.json();
-      console.log(
-        `🔧 AIService: Raw Ollama response:`,
-        JSON.stringify(data, null, 2)
-      );
-      console.log(
-        `🔧 AIService: Returning message:`,
-        JSON.stringify(data.message, null, 2)
-      );
+      
+      // Log only critical response info
+      if (data.message?.tool_calls?.[0]) {
+        const tool = data.message.tool_calls[0];
+        console.log(`[AI] ${npcName}: Tool -> ${tool.function.name}(${JSON.stringify(tool.function.arguments)})`);
+      } else if (data.message?.content) {
+        console.log(`[AI] ${npcName}: Text -> "${data.message.content.substring(0, 100)}..."`);
+      } else {
+        console.log(`[AI] ${npcName}: ERROR -> No tool call or content`);
+      }
+      
       return data.message;
     } catch (error) {
-      console.error("🔧 AIService: Tool-based AI request failed:", error);
+      console.error(`[LLM_FLOW] ERROR: Tool-based AI request failed:`, error);
       throw error;
     }
   }
@@ -749,26 +742,42 @@ LEARNING FROM FAILURES:
     conversationHistory: any[] = []
   ): Promise<string> {
     try {
+      console.log(`[LLM_FLOW] ===== LEGACY OLLAMA REQUEST START =====`);
+      
       const prompt = `You are ${personality}. Keep responses under 100 words. Stay in character.\n\nUser: ${userMessage}\nResponse:`;
+      
+      console.log(`[LLM_FLOW] Legacy Prompt:`, prompt);
+      console.log(`[LLM_FLOW] Conversation History:`, JSON.stringify(conversationHistory, null, 2));
+      
+      const requestBody = {
+        model: "llama3.2:3b",
+        prompt: prompt,
+        stream: false,
+      };
+      
+      console.log(`[LLM_FLOW] Legacy Request Body:`, JSON.stringify(requestBody, null, 2));
 
       const response = await fetch(this.baseUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "llama3.2:3b",
-          prompt: prompt,
-          stream: false,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
+      console.log(`[LLM_FLOW] Legacy Response Status: ${response.status}`);
+
       if (!response.ok) {
+        console.log(`[LLM_FLOW] Legacy ERROR: HTTP ${response.status}`);
         throw new Error(`HTTP ${response.status}`);
       }
 
       const data = await response.json();
+      console.log(`[LLM_FLOW] Legacy Raw Response:`, JSON.stringify(data, null, 2));
+      console.log(`[LLM_FLOW] Legacy Response Text:`, data.response);
+      console.log(`[LLM_FLOW] ===== LEGACY OLLAMA REQUEST END =====`);
+      
       return data.response;
     } catch (error) {
-      console.warn("AI service failed, using fallback:", error);
+      console.warn(`[LLM_FLOW] Legacy AI service failed, using fallback:`, error);
       return this.getLegacyFallbackResponse(personality);
     }
   }
@@ -794,5 +803,39 @@ LEARNING FROM FAILURES:
     }
 
     return responses[Math.floor(Math.random() * responses.length)];
+  }
+
+  private validateToolCallResponse(toolCall: any, npcName: string): boolean {
+    // Check if tool call has proper structure
+    if (!toolCall?.function?.name) {
+      console.warn(`⚠️ ${npcName}: Tool call missing function name`);
+      return false;
+    }
+
+    // Check if arguments is an object (not a string)
+    if (typeof toolCall.function.arguments === 'string') {
+      console.warn(`⚠️ ${npcName}: Tool call arguments is a string instead of object`);
+      return false;
+    }
+
+    // Validate specific tool parameters
+    const toolName = toolCall.function.name;
+    const args = toolCall.function.arguments;
+
+    if (toolName === 'toggle_following') {
+      if (args.following !== undefined && args.follow === undefined) {
+        console.warn(`⚠️ ${npcName}: toggle_following using 'following' instead of 'follow' parameter`);
+        return false;
+      }
+    }
+
+    if (toolName === 'speak') {
+      if (!args.message || typeof args.message !== 'string') {
+        console.warn(`⚠️ ${npcName}: speak tool missing or invalid message parameter`);
+        return false;
+      }
+    }
+
+    return true;
   }
 }

@@ -1,8 +1,15 @@
 import { PersistentNPC } from "../entities/PersistentNPC";
 import { EventBus } from "./EventBus";
 
+interface ProximityObject {
+  id: string;
+  getPosition(): { x: number; y: number };
+  getOfferedTools(): any[];
+}
+
 export class ProximitySystem {
   private npcs: Map<string, PersistentNPC> = new Map();
+  private objects: Map<string, ProximityObject> = new Map();
   private playerX: number = 0;
   private playerY: number = 0;
   private range: number = 96; // 2 tiles at 48px per tile
@@ -23,6 +30,37 @@ export class ProximitySystem {
     });
   }
 
+  addObject(obj: ProximityObject): void {
+    this.objects.set(obj.id, obj);
+    console.log(`[PROXIMITY] Added object ${obj.id} to proximity tracking`);
+  }
+
+  removeObject(objId: string): void {
+    this.objects.delete(objId);
+    console.log(`[PROXIMITY] Removed object ${objId} from proximity tracking`);
+  }
+
+  getNearbyObjects(npcId: string): ProximityObject[] {
+    const npc = this.npcs.get(npcId);
+    if (!npc) return [];
+
+    const npcPos = npc.getPosition();
+    const nearby: ProximityObject[] = [];
+
+    this.objects.forEach((obj) => {
+      const objPos = obj.getPosition();
+      const distance = Phaser.Math.Distance.Between(
+        npcPos.x, npcPos.y,
+        objPos.x, objPos.y
+      );
+
+      if (distance < this.range) {
+        nearby.push(obj);
+      }
+    });
+
+    return nearby;
+  }
   addNPC(npc: PersistentNPC): void {
     this.npcs.set(npc.id, npc);
     console.log(`[PROXIMITY] Added NPC ${npc.name} to proximity tracking`);

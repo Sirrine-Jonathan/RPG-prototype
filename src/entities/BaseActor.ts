@@ -86,13 +86,15 @@ export abstract class BaseActor {
   }
   
   // Get nearby objects that can offer tools
-  protected getNearbyObjects(): BaseActor[] {
+  protected getNearbyObjects(): any[] {
     const gameManager = (globalThis as any).gameManager;
     if (!gameManager || !gameManager.proximitySystem) return [];
     
-    // This would be implemented to find nearby objects
-    // For now, return empty array
-    return [];
+    const nearbyObjects = gameManager.proximitySystem.getNearbyObjects(this.id);
+    if (nearbyObjects.length > 0) {
+      console.log(`[NPC_FLOW] ${this.name}: Found ${nearbyObjects.length} nearby objects:`, nearbyObjects.map(obj => obj.id));
+    }
+    return nearbyObjects;
   }
   
   // Check if there are nearby actors to speak to

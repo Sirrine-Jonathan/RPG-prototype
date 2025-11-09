@@ -696,6 +696,52 @@ LEARNING FROM FAILURES:
     return "That's... interesting. Tell me more.";
   }
 
+  async generateResponseWithTools(messages: any[], tools: any[]): Promise<any> {
+    try {
+      console.log(`🔧 AIService: generateResponseWithTools called`);
+      console.log(`🔧 AIService: Messages:`, JSON.stringify(messages, null, 2));
+      console.log(
+        `🔧 AIService: Tools:`,
+        JSON.stringify(
+          tools.map((tool) => tool.function.name),
+          null,
+          2
+        )
+      );
+
+      const response = await fetch("http://localhost:11434/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "llama3.2:3b",
+          messages: messages,
+          tools: tools,
+          stream: false,
+        }),
+      });
+
+      console.log(`🔧 AIService: Response status:`, response.status);
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log(
+        `🔧 AIService: Raw Ollama response:`,
+        JSON.stringify(data, null, 2)
+      );
+      console.log(
+        `🔧 AIService: Returning message:`,
+        JSON.stringify(data.message, null, 2)
+      );
+      return data.message;
+    } catch (error) {
+      console.error("🔧 AIService: Tool-based AI request failed:", error);
+      throw error;
+    }
+  }
+
   // Legacy method for backward compatibility
   async generateResponse(
     personality: string,

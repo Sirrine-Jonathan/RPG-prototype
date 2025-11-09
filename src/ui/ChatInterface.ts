@@ -1,11 +1,17 @@
 import { Scene } from 'phaser';
 import { SmartNPC } from '../entities/SmartNPC';
 import { AIService } from '../services/AIService';
+import { EventBus } from '../systems/EventBus';
 
 interface TownMessage {
-    type: 'speech' | 'action';
+    type: 'speech' | 'action' | 'note';
     speaker: string;
     content: string;
+    timestamp: number;
+}
+
+interface AssistantNote {
+    note: string;
     timestamp: number;
 }
 
@@ -28,8 +34,9 @@ export class ChatInterface {
     private _aiService!: AIService;
     
     private townMessages: TownMessage[] = [];
+    private assistantNotes: AssistantNote[] = [];
     private activeTab: 'chat' | 'inventory' | 'notes' = 'chat';
-    private isMinimized: boolean = false;
+    private isMinimized: boolean = true;
     private nearbyNPCs: Set<string> = new Set();
     private playerNotes: Array<{
         id: string;
@@ -50,8 +57,12 @@ export class ChatInterface {
         this.createUI();
         this.setupEventListeners();
         
-        // Listen for global town speech
-        this.scene.events.on('town-speech', this.onTownSpeech, this);
+        // Listen for player hearing speech
+        const gameManager = (globalThis as any).gameManager;
+        if (gameManager && gameManager.eventBus) {
+            gameManager.eventBus.subscribe('player-heard', (event: any) => this.onPlayerHeard(event.data));
+            gameManager.eventBus.subscribe('assistant-noted', (event: any) => this.onAssistantNoted(event.data));
+        }
         
         // Listen for object interactions
         this.scene.events.on('town-action', this.onTownAction, this);
@@ -70,6 +81,7 @@ export class ChatInterface {
     }
 
     private createUI() {
+        console.log('🎯 ChatInterface: Creating UI');
         // Main container
         this.container = document.createElement('div');
         this.container.style.cssText = `
@@ -244,6 +256,16 @@ export class ChatInterface {
         this.container.appendChild(this.inputArea);
         
         document.body.appendChild(this.container);
+        console.log('🎯 ChatInterface: UI created and added to DOM, minimized:', this.isMinimized);
+        
+        // Apply minimized state after creation
+        if (this.isMinimized) {
+            this.container.style.height = '40px';
+            this.messageArea.style.display = 'none';
+            this.inventoryArea.style.display = 'none';
+            this.inputArea.style.display = 'none';
+            this.minimizeButton.textContent = '+';
+        }
         
         // Add CSS animations
         if (!document.getElementById('chat-animations')) {
@@ -272,15 +294,40 @@ export class ChatInterface {
     private updateNotesArea() {
         this.notesArea.innerHTML = '<h3 style="color: white; margin: 0 0 15px 0;">Investigation Notes</h3>';
         
-        if (this.playerNotes.length === 0) {
+        // Combine player notes and assistant notes
+        const allNotes = [
+            ...this.playerNotes.map(note => ({
+                type: 'player',
+                content: note.content,
+                category: note.category,
+                timestamp: note.timestamp,
+                location: note.location
+            })),
+            ...this.assistantNotes.map(note => ({
+                type: 'assistant',
+                content: note.note,
+                category: 'Assistant Observation',
+                timestamp: new Date(note.timestamp).toLocaleTimeString(),
+                location: 'Town'
+            }))
+        ];
+        
+        // Sort by timestamp (most recent first)
+        allNotes.sort((a, b) => {
+            const timeA = a.type === 'assistant' ? a.timestamp : new Date(a.timestamp).getTime();
+            const timeB = b.type === 'assistant' ? b.timestamp : new Date(b.timestamp).getTime();
+            return timeB - timeA;
+        });
+        
+        if (allNotes.length === 0) {
             const noNotes = document.createElement('p');
             noNotes.style.cssText = 'color: #888; font-style: italic; text-align: center; margin-top: 50px;';
-            noNotes.textContent = 'No notes yet. Chronicle will help you take notes as you investigate.';
+            noNotes.textContent = 'No notes yet. Your assistant will help you take notes as you investigate.';
             this.notesArea.appendChild(noNotes);
             return;
         }
         
-        this.playerNotes.forEach(note => {
+        allNotes.forEach(note => {
             const noteDiv = document.createElement('div');
             noteDiv.style.cssText = `
                 padding: 12px;
@@ -295,7 +342,7 @@ export class ChatInterface {
             headerDiv.style.cssText = 'display: flex; justify-content: space-between; margin-bottom: 8px;';
             
             const categoryDiv = document.createElement('span');
-            categoryDiv.style.cssText = 'font-weight: bold; color: #4a90e2;';
+            categoryDiv.style.cssText = `font-weight: bold; color: ${note.type === 'assistant' ? '#90EE90' : '#4a90e2'};`;
             categoryDiv.textContent = note.category;
             
             const timeDiv = document.createElement('span');
@@ -401,6 +448,15 @@ export class ChatInterface {
         // Get player position from current scene
         const playerPos = this.getPlayerPosition();
         
+        // Emit player speech event for NPCs to hear
+        EventBus.getInstance().emit('player_speech', {
+            speaker: "Player",
+            speakerId: "player", 
+            message: message,
+            position: playerPos,
+            timestamp: Date.now()
+        });
+        
         // Emit global town speech event
         this.scene.events.emit('town-speech', {
             speaker: "Player",
@@ -425,6 +481,30 @@ export class ChatInterface {
         this.updateTownChat();
     };
 
+    private onPlayerHeard = (data: { speaker: string; message: string; distance: number }) => {
+        this.townMessages.push({
+            type: 'speech',
+            speaker: data.speaker,
+            content: data.message,
+            timestamp: Date.now()
+        });
+        
+        this.updateTownChat();
+    };
+
+    private onAssistantNoted = (data: { note: string; timestamp: number }) => {
+        this.assistantNotes.push({
+            note: data.note,
+            timestamp: data.timestamp
+        });
+        
+        // Don't add notes to conversation - they belong in the notes tab only
+        this.updateNotesTab();
+        
+        this.updateTownChat();
+        this.updateNotesArea();
+    };
+
     private onTownSpeech = (data: { speaker: string; speakerId: string; message: string; position: { x: number; y: number }; timestamp: number }) => {
         // Don't add player messages twice
         if (data.speakerId === 'player') return;
@@ -438,6 +518,12 @@ export class ChatInterface {
         
         this.updateTownChat();
     };
+
+    private updateNotesTab() {
+        if (this.currentTab === 'notes') {
+            this.updateNotesArea();
+        }
+    }
 
     private onNotesUpdate = (notes: Array<{id: string; content: string; category: string; timestamp: string; location: string}>) => {
         this.playerNotes = notes;
@@ -655,7 +741,8 @@ export class ChatInterface {
         return a.size === b.size && [...a].every(x => b.has(x));
     }
 
-    private toggleMinimize() {
+    public toggleMinimize() {
+        console.log('🎯 ChatInterface: toggleMinimize called, current state:', this.isMinimized);
         this.isMinimized = !this.isMinimized;
         
         if (this.isMinimized) {
@@ -669,6 +756,8 @@ export class ChatInterface {
             this.switchTab(this.activeTab);
             this.minimizeButton.textContent = '−';
         }
+        
+        console.log('🎯 ChatInterface: New state:', this.isMinimized, 'Container display:', this.container.style.display);
     }
 
     private switchTab(tab: 'chat' | 'inventory' | 'notes') {
@@ -702,36 +791,10 @@ export class ChatInterface {
     private updateInventoryArea() {
         this.inventoryArea.innerHTML = '<h3 style="color: white; margin: 0 0 15px 0;">Inventory</h3>';
         
-        // Placeholder inventory items
-        const items = [
-            { name: 'Old Key', description: 'A rusty key found in the town square', quantity: 1 },
-            { name: 'Mysterious Note', description: 'A cryptic message about the whispering stones', quantity: 1 },
-            { name: 'Coins', description: 'Local currency', quantity: 25 }
-        ];
-        
-        items.forEach(item => {
-            const itemDiv = document.createElement('div');
-            itemDiv.style.cssText = `
-                padding: 8px;
-                margin-bottom: 8px;
-                background: rgba(100, 100, 100, 0.2);
-                border: 1px solid #666;
-                border-radius: 4px;
-                color: white;
-            `;
-            
-            const nameDiv = document.createElement('div');
-            nameDiv.style.cssText = 'font-weight: bold; margin-bottom: 4px;';
-            nameDiv.textContent = `${item.name} (${item.quantity})`;
-            
-            const descDiv = document.createElement('div');
-            descDiv.style.cssText = 'font-size: 12px; color: #ccc;';
-            descDiv.textContent = item.description;
-            
-            itemDiv.appendChild(nameDiv);
-            itemDiv.appendChild(descDiv);
-            this.inventoryArea.appendChild(itemDiv);
-        });
+        const emptyMessage = document.createElement('p');
+        emptyMessage.style.cssText = 'color: #888; font-style: italic; text-align: center; margin-top: 50px;';
+        emptyMessage.textContent = 'Inventory system not yet implemented.';
+        this.inventoryArea.appendChild(emptyMessage);
     }
 
     destroy() {

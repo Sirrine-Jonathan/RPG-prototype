@@ -17,6 +17,7 @@ import { PropsViewerScene } from "./src/scenes/PropsViewerScene";
 import { LevelTestScene } from "./src/scenes/LevelTestScene";
 import { TownScene } from "./src/scenes/TownScene";
 import { NewTownScene } from "./src/scenes/NewTownScene";
+import { NewLibraryScene } from "./src/scenes/NewLibraryScene";
 import { GameManager } from "./src/core/GameManager";
 
 const config = {
@@ -48,6 +49,7 @@ const config = {
     LevelTestScene,
     TownScene,
     NewTownScene, // Add new architecture scene
+    NewLibraryScene, // Add new library scene
   ],
 };
 

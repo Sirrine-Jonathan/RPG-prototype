@@ -1,3 +1,5 @@
+import { Debug } from "../utils/Debug";
+
 export interface Portal {
     id: string;
     x: number;
@@ -19,19 +21,58 @@ export class PortalService {
     private spawnPoints: SpawnPoint[] = [];
     private lastTriggeredPortal: string = "";
     private triggerCooldown: number = 0;
+    private debugGraphics: Phaser.GameObjects.Graphics | null = null;
 
     constructor(scene: Phaser.Scene) {
         this.scene = scene;
+        
+        // Create debug graphics if debug is enabled
+        if (Debug.enabled) {
+            this.debugGraphics = scene.add.graphics();
+            this.debugGraphics.setDepth(1000); // Show on top
+        }
     }
 
     addPortal(portal: Portal): void {
         this.portals.push(portal);
-        console.log(`🚪 Added portal: ${portal.id} -> ${portal.targetScene}:${portal.targetPortalId}`);
+        console.log(`🚪 Added portal: ${portal.id} -> ${portal.targetScene}:${portal.targetPortalId} at (${portal.x}, ${portal.y})`);
+        
+        // Add debug visualization
+        if (this.debugGraphics) {
+            this.debugGraphics.lineStyle(3, 0x00ff00, 0.8);
+            this.debugGraphics.strokeRect(portal.x - 24, portal.y - 24, 48, 48);
+            this.debugGraphics.fillStyle(0x00ff00, 0.3);
+            this.debugGraphics.fillRect(portal.x - 24, portal.y - 24, 48, 48);
+            
+            // Add portal ID text
+            this.scene.add.text(portal.x, portal.y - 40, portal.id, {
+                fontSize: '12px',
+                color: '#00ff00',
+                backgroundColor: '#000000aa',
+                padding: { x: 4, y: 2 }
+            }).setOrigin(0.5).setDepth(1001);
+        }
     }
 
     addSpawnPoint(spawn: SpawnPoint): void {
         this.spawnPoints.push(spawn);
-        console.log(`📍 Added spawn point: ${spawn.id} ${spawn.isDefault ? '(default)' : ''}`);
+        console.log(`📍 Added spawn point: ${spawn.id} at (${spawn.x}, ${spawn.y}) ${spawn.isDefault ? '(default)' : ''}`);
+        
+        // Add debug visualization for spawn points
+        if (this.debugGraphics) {
+            this.debugGraphics.lineStyle(3, 0x0088ff, 0.8);
+            this.debugGraphics.strokeCircle(spawn.x, spawn.y, 20);
+            this.debugGraphics.fillStyle(0x0088ff, 0.3);
+            this.debugGraphics.fillCircle(spawn.x, spawn.y, 20);
+            
+            // Add spawn ID text
+            this.scene.add.text(spawn.x, spawn.y + 30, spawn.id, {
+                fontSize: '10px',
+                color: '#0088ff',
+                backgroundColor: '#000000aa',
+                padding: { x: 4, y: 2 }
+            }).setOrigin(0.5).setDepth(1001);
+        }
     }
 
     getPortals(): Portal[] {
@@ -82,23 +123,32 @@ export class PortalService {
     private async enterPortal(portal: Portal): Promise<void> {
         console.log(`Entering portal ${portal.id} -> ${portal.targetScene}`);
         
-        // Store portal transition data
-        this.scene.registry.set('portalTransition', {
-            targetScene: portal.targetScene,
-            targetPortalId: portal.targetPortalId,
-            sourceScene: this.scene.scene.key,
-            sourcePortalId: portal.id
-        });
-        
-        // Properly shutdown the current scene before starting new one
-        if (this.scene.shutdown) {
-            this.scene.shutdown();
+        // Check if we're using new architecture
+        const gameManager = (globalThis as any).gameManager;
+        if (gameManager) {
+            // Use new architecture scene transition
+            await gameManager.sceneTransitionManager.switchScene({
+                sourceScene: this.scene.scene.key,
+                targetScene: portal.targetScene,
+                sourcePortalId: portal.id,
+                targetPortalId: portal.targetPortalId
+            }, this.scene);
+        } else {
+            // Fallback to old system
+            this.scene.registry.set('portalTransition', {
+                targetScene: portal.targetScene,
+                targetPortalId: portal.targetPortalId,
+                sourceScene: this.scene.scene.key,
+                sourcePortalId: portal.id
+            });
+            
+            if (this.scene.shutdown) {
+                this.scene.shutdown();
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, 50));
+            this.scene.scene.start(portal.targetScene);
         }
-        
-        // Small delay to ensure cleanup completes
-        await new Promise(resolve => setTimeout(resolve, 50));
-        
-        this.scene.scene.start(portal.targetScene);
     }
 
     handlePortalEntry(): SpawnPoint | null {

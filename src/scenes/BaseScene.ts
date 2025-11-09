@@ -13,6 +13,7 @@ export class BaseScene extends Scene {
         this.setupCameraControls();
         
         // Get or create singleton chat interface
+        console.log('🎯 BaseScene: Creating ChatInterface');
         this.chatInterface = ChatInterface.getInstance(this);
         
         // Don't set camera bounds initially - will be set in setGameAreaSize

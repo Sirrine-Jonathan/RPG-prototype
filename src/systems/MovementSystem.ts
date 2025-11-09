@@ -51,6 +51,12 @@ export class MovementSystem {
   }
   
   private handleKeyboardMovement(player: any): void {
+    // Don't handle keyboard if pathfinding is active
+    const gameManager = GameManager.getInstance();
+    if (gameManager.systemManager.pathfindingSystem.isPlayerMoving()) {
+      return;
+    }
+    
     const speed = 200;
     let moving = false;
     let direction = '';
@@ -81,15 +87,35 @@ export class MovementSystem {
     
     if (moving) {
       player.setPosition(newX, newY);
+      
+      // Update proximity system with new player position
+      const gameManager = (globalThis as any).gameManager;
+      if (gameManager && gameManager.proximitySystem) {
+        gameManager.proximitySystem.updatePlayerPosition(newX, newY);
+      } else {
+        console.warn('[PROXIMITY] GameManager or ProximitySystem not available');
+      }
+      
+      // Check for portal triggers after movement
+      if (gameManager && this.currentScene && (this.currentScene as any).portalService) {
+        (this.currentScene as any).portalService.checkPortalTriggers(newX, newY);
+      }
+      
       // Handle animation through sprite
       const sprite = player.getSprite();
-      if (sprite) {
-        sprite.play(`adam_walk_${direction}`, true);
+      if (sprite && sprite.anims) {
+        const animKey = `adam_walk_${direction}`;
+        if (sprite.scene.anims.exists(animKey)) {
+          sprite.play(animKey, true);
+        }
       }
     } else {
       const sprite = player.getSprite();
-      if (sprite) {
-        sprite.play(`adam_idle_down`, true);
+      if (sprite && sprite.anims) {
+        const animKey = `adam_idle_down`;
+        if (sprite.scene.anims.exists(animKey)) {
+          sprite.play(animKey, true);
+        }
       }
     }
   }

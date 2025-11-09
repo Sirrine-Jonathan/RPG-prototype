@@ -16,7 +16,19 @@ export class PersistentPlayer {
     this.sprite = scene.add.sprite(this.position.x, this.position.y, 'adam', 0);
     this.sprite.setScale(2);
     this.sprite.setOrigin(0.5, 0.5);
-    this.sprite.play(`adam_idle_${this.lastDirection}`);
+    
+    // Check if animation exists before playing
+    const animKey = `adam_idle_${this.lastDirection}`;
+    if (scene.anims.exists(animKey)) {
+      this.sprite.play(animKey);
+    } else {
+      console.warn(`Missing animation: ${animKey}`);
+      this.sprite.setFrame(0); // Use default frame
+    }
+    
+    // Start camera following
+    scene.cameras.main.startFollow(this.sprite);
+    console.log('📷 PersistentPlayer: Camera following player');
   }
   
   public transferToScene(newScene: Phaser.Scene): void {
@@ -30,8 +42,9 @@ export class PersistentPlayer {
     // Create sprite in new scene
     this.createSprite(newScene);
     
-    // Set up camera
+    // Set up camera following
     newScene.cameras.main.startFollow(this.sprite!);
+    console.log('📷 PersistentPlayer: Camera now following player');
   }
   
   public setPosition(x: number, y: number): void {

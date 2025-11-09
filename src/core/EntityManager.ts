@@ -29,7 +29,24 @@ export class EntityManager {
     
     const npc = new PersistentNPC(scene, config);
     this.npcs.set(id, npc);
+    
+    // Register with proximity system
+    const gameManager = (globalThis as any).gameManager;
+    if (gameManager && gameManager.proximitySystem) {
+      gameManager.proximitySystem.addNPC(npc);
+    }
+    
     return npc;
+  }
+
+  public addNPC(npc: PersistentNPC): void {
+    this.npcs.set(npc.id, npc);
+    
+    // Register with proximity system
+    const gameManager = (globalThis as any).gameManager;
+    if (gameManager && gameManager.proximitySystem) {
+      gameManager.proximitySystem.addNPC(npc);
+    }
   }
   
   public getNPCsForScene(sceneKey: string): PersistentNPC[] {

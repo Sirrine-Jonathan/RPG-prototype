@@ -1,17 +1,33 @@
 import { BaseScene } from "./BaseScene";
 import { GameManager } from "../core/GameManager";
 import { PortalData } from "../core/SceneTransitionManager";
+import { AssetManager } from "../systems/AssetManager";
+import { QuickSpeechUI } from "../ui/QuickSpeechUI";
 
 export abstract class NewGameplayScene extends BaseScene {
   protected gameManager: GameManager;
+  protected assetManager: AssetManager;
+  protected quickSpeechUI!: QuickSpeechUI;
   
   constructor(config: Phaser.Types.Scenes.SettingsConfig) {
     super(config);
     this.gameManager = GameManager.getInstance();
   }
 
+  preload() {
+    this.assetManager = new AssetManager(this);
+    this.assetManager.preloadTechDungeonAssets();
+  }
+
   create(data?: { portalData?: PortalData }) {
     super.create();
+    
+    // Create player animations
+    this.assetManager.createPlayerAnimations();
+    
+    // Setup QuickSpeechUI
+    console.log('🎯 NewGameplayScene: Setting up QuickSpeechUI for scene:', this.scene.key);
+    this.quickSpeechUI = new QuickSpeechUI(this);
     
     console.log(`🎬 ${this.scene.key}: Creating scene with new architecture`);
     
@@ -24,6 +40,9 @@ export abstract class NewGameplayScene extends BaseScene {
     
     // Set up movement system for this scene
     this.gameManager.systemManager.movementSystem.setupInput(this);
+    
+    // Set up camera system for this scene
+    this.gameManager.systemManager.cameraSystem.setupForScene(this);
     
     // Handle scene transition completion
     if (data?.portalData) {

@@ -20,7 +20,7 @@ export interface LevelData {
 
 export interface LevelObject {
     id: string;
-    type: 'npc' | 'interactive' | 'spawn';
+    type: 'npc' | 'interactive' | 'spawn' | 'portal';
     subtype: string;
     x: number;
     y: number;
@@ -46,18 +46,23 @@ export class LevelLoader {
             }
             
             this.levelData = await response.json();
+            console.log(`🔍 LevelLoader: Raw JSON loaded:`, this.levelData);
+            console.log(`🔍 LevelLoader: Objects in JSON:`, this.levelData.objects);
             
             // Load all tilesets
             const tilesetPromises: Promise<void>[] = [];
-            const loadedTilesets = new Set<string>();
+            const tilesetKeyMap = new Map<string, string>(); // tileset path -> key
             
             Object.entries(this.levelData.layers).forEach(([layerName, layerData]) => {
                 if (layerName === 'collision' || layerName === 'objects') return;
                 
                 const tilesetData = layerData as LayerData;
-                if (!loadedTilesets.has(tilesetData.tileset)) {
-                    loadedTilesets.add(tilesetData.tileset);
-                    const tilesetKey = `tileset_${levelId}_${layerName}`;
+                let tilesetKey = tilesetKeyMap.get(tilesetData.tileset);
+                
+                if (!tilesetKey) {
+                    // Create new tileset key for this tileset file
+                    tilesetKey = `tileset_${levelId}_${layerName}`;
+                    tilesetKeyMap.set(tilesetData.tileset, tilesetKey);
                     
                     if (!this.scene.textures.exists(tilesetKey)) {
                         this.scene.load.image(tilesetKey, tilesetData.tileset);
@@ -86,11 +91,21 @@ export class LevelLoader {
     private createTilemaps(levelId: string): void {
         if (!this.levelData) return;
 
+        // Create tileset key mapping
+        const tilesetKeyMap = new Map<string, string>();
+        Object.entries(this.levelData.layers).forEach(([layerName, layerData]) => {
+            if (layerName === 'collision' || layerName === 'objects') return;
+            const tilesetData = layerData as LayerData;
+            if (!tilesetKeyMap.has(tilesetData.tileset)) {
+                tilesetKeyMap.set(tilesetData.tileset, `tileset_${levelId}_${layerName}`);
+            }
+        });
+
         Object.entries(this.levelData.layers).forEach(([layerName, layerData]) => {
             if (layerName === 'collision' || layerName === 'objects') return;
             
             const tilesetData = layerData as LayerData;
-            const tilesetKey = `tileset_${levelId}_${layerName}`;
+            const tilesetKey = tilesetKeyMap.get(tilesetData.tileset)!;
             
             const tilemap = this.scene.make.tilemap({
                 data: tilesetData.data,
@@ -136,7 +151,7 @@ export class LevelLoader {
     }
 
     private placeObjects(): void {
-        if (!this.levelData) return;
+        if (!this.levelData || !this.levelData.layers.objects) return;
 
         // Clear existing objects
         this.objects.forEach(obj => obj.destroy());
@@ -187,6 +202,10 @@ export class LevelLoader {
                     (gameObject as any).objectData = objData;
                     (gameObject as any).symbolText = symbolText;
                     break;
+
+                case 'portal':
+                    // Portals are handled by PortalService, no visual representation needed here
+                    break;
             }
 
             if (gameObject) {
@@ -196,7 +215,7 @@ export class LevelLoader {
     }
 
     getPlayerSpawn(): { x: number, y: number } | null {
-        if (!this.levelData) return null;
+        if (!this.levelData || !this.levelData.layers.objects) return null;
 
         const spawnObject = this.levelData.layers.objects.find(
             obj => obj.type === 'spawn' && obj.subtype === 'player'

@@ -64,6 +64,11 @@ export class PersistentNPC extends BaseActor {
     // Don't react to our own speech
     if (speechData.speakerId === this.id) return;
 
+    // Only react to speech from NPCs in the same scene
+    if (!this.currentScene || speechData.sceneKey !== this.currentScene.scene.key) {
+      return;
+    }
+
     // Check if we're within hearing range
     const myPos = this.getPosition();
     const distance = Phaser.Math.Distance.Between(
@@ -176,6 +181,11 @@ export class PersistentNPC extends BaseActor {
     console.log(`[NPC_FLOW] ${this.name}: Set random timeout for ${Math.round(delay)}ms`);
   }
 
+  private resetTimeout(): void {
+    console.log(`[NPC_FLOW] ${this.name}: Resetting timeout due to action`);
+    this.startRandomTimeout();
+  }
+
   private async performAIAction(
     eventType?: string,
     eventData?: any
@@ -273,7 +283,11 @@ export class PersistentNPC extends BaseActor {
         } else if (eventType === "player_speech") {
           contextDescription = `A player just said: "${eventData.message}" (${Math.round(eventData.distance)}px away). Respond appropriately to what they said.`;
         } else if (eventType === "timeout_prompt") {
-          contextDescription = `You haven't done anything for a while and want to do something while walking around town outdoors. Choose an action that fits your character.`;
+          // Use scene-appropriate context
+          const sceneContext = this.currentScene?.scene.key === 'NewLibraryScene' 
+            ? 'in the library' 
+            : 'walking around town outdoors';
+          contextDescription = `You haven't done anything for a while and want to do something while ${sceneContext}. Choose an action that fits your character.`;
         }
 
         // Convert tools to proper tool calling format
@@ -313,11 +327,13 @@ export class PersistentNPC extends BaseActor {
           `[NPC_FLOW] ${this.name}: Using tool calling for "${eventType}"`
         );
 
-        // Tool use loop - allow multiple tool calls
-        let maxIterations = 3;
+        // Tool use loop - allow limited chaining to prevent infinite loops
         let currentMessages = [...messages];
+        let toolsExecuted = false;
+        let actionCount = 0;
+        const MAX_ACTIONS = 3; // Limit to prevent infinite loops
 
-        while (maxIterations > 0) {
+        while (actionCount < MAX_ACTIONS) {
           const response = await this.aiService.generateResponseWithTools(
             currentMessages,
             toolDefinitions
@@ -359,16 +375,31 @@ export class PersistentNPC extends BaseActor {
               const availableTools = this.getToolsForAI();
               const tool = availableTools.find(t => t.name === functionName);
               
+              console.log(`[NPC] ${this.name}: Available tools:`, availableTools.map(t => t.name));
+              console.log(`[NPC] ${this.name}: Looking for tool:`, functionName);
+              console.log(`[NPC] ${this.name}: Found tool:`, !!tool);
+              
               if (tool && tool.handler) {
+                console.log(`[NPC] ${this.name}: Executing tool handler for ${functionName}`);
                 toolResult = await tool.handler(args);
                 chosenAction = functionName;
+                console.log(`[NPC] ${this.name}: Tool result ->`, JSON.stringify(toolResult));
               } else if (functionName === "speak") {
-                toolResult = await this.handleSpeak(args.message);
+                // Validate speak message
+                const speakMessage = args.message || "";
+                if (!speakMessage.trim()) {
+                  console.warn(`⚠️ [NPC] ${this.name}: Empty speak message - skipping tool execution`);
+                  toolResult = { success: false, message: "Empty speak message" };
+                } else {
+                  toolResult = await this.handleSpeak(args.message);
+                }
                 chosenAction = "speak";
+                console.log(`[NPC] ${this.name}: Speak result ->`, JSON.stringify(toolResult));
               } else if (functionName.startsWith("move_")) {
                 const direction = functionName.replace("move_", "");
                 toolResult = await this.handleMove(direction);
                 chosenAction = functionName;
+                console.log(`[NPC] ${this.name}: Move result ->`, JSON.stringify(toolResult));
               }
 
               // Add tool result to conversation
@@ -377,11 +408,30 @@ export class PersistentNPC extends BaseActor {
                 tool_call_id: toolCall.id,
                 content: JSON.stringify(toolResult),
               });
+              
+              // Reset timeout since we took an action
+              this.resetTimeout();
+              toolsExecuted = true;
+              
+              // Break if AI chose to take a break
+              if (functionName === 'take_a_break') {
+                console.log(`[NPC_FLOW] ${this.name}: AI chose to take a break, ending action chain`);
+                break;
+              }
+              
+              actionCount++; // Increment action counter
             }
 
-            maxIterations--;
+            // Continue the loop to get AI response to tool results
           } else {
-            // No more tool calls, check if there's text content to parse
+            // No tool calls - either break or try to parse old format
+            if (toolsExecuted) {
+              // We executed tools, AI chose not to continue - that's fine
+              console.log(`[NPC_FLOW] ${this.name}: AI chose to stop after executing tools`);
+              break;
+            }
+            
+            // No tools executed yet, check if there's text content to parse
             console.log(
               `[NPC_FLOW] ${this.name}: No tool calls in response, checking content`
             );
@@ -401,6 +451,7 @@ export class PersistentNPC extends BaseActor {
                     );
                     
                     // Execute the parsed tool
+                    const availableTools = this.getToolsForAI();
                     const tool = availableTools.find(t => t.name === parsed.name);
                     if (tool && tool.handler) {
                       await tool.handler(parsed.parameters);
@@ -444,6 +495,12 @@ export class PersistentNPC extends BaseActor {
             }
             break;
           }
+          
+          // Safety check - if we hit max actions, force break
+          if (actionCount >= MAX_ACTIONS) {
+            console.log(`[NPC_FLOW] ${this.name}: Hit max actions (${MAX_ACTIONS}), forcing break`);
+            break;
+          }
         }
 
         // Update conversation history (keep last 10 messages)
@@ -471,6 +528,15 @@ export class PersistentNPC extends BaseActor {
   public triggerEvent(eventType: string, eventData?: any): void {
     console.log(`[NPC_FLOW] ${this.name}: Received event "${eventType}"`);
     
+    // Check if this NPC is paused by the AI system
+    const gameManager = (globalThis as any).gameManager;
+    if (gameManager && gameManager.systemManager && gameManager.systemManager.aiSystem) {
+      if (!gameManager.systemManager.aiSystem.isNPCActive(this.id)) {
+        console.log(`[NPC_FLOW] ${this.name}: Ignoring event "${eventType}" - NPC is paused`);
+        return;
+      }
+    }
+    
     // Clear current timeout and start a new random one (unless this IS the timeout event)
     if (eventType !== 'timeout_prompt') {
       this.startRandomTimeout();
@@ -481,40 +547,59 @@ export class PersistentNPC extends BaseActor {
 
   private async handlePlayerInteraction(): Promise<void> {
     try {
-      const tools = this.getToolsForAI();
-
-      const prompt = `You are ${this.name}, a ${
-        this.personality
-      } character with background: ${this.background}.
-      
-CURRENT SITUATION: You are currently standing outdoors in the town center/streets, not in any building or meeting. A player just walked up to you and clicked on you to start a conversation.
-
-LOCATION: You are outside in the town, visible to everyone, not in any private or official setting.
-
-Available actions: ${tools.map((t) => t.name).join(", ")}
-
-IMPORTANT: Respond ONLY with valid JSON in this exact format:
-{"action": "speak", "message": "your greeting here"}
-
-Do NOT include any narrative text, descriptions, or extra content. Just the JSON.`;
-
       console.log(
         `[NPC_FLOW] ${this.name}: Direct AI prompt for player interaction`
       );
 
-      const response = await this.aiService.generateResponse(prompt, "", this.conversationHistory);
+      const toolDefinitions = this.getPersistentTools().map((tool) => ({
+        type: "function",
+        function: {
+          name: tool.name,
+          description: tool.description,
+          parameters: {
+            type: "object",
+            properties: tool.parameters || {},
+          },
+        },
+      }));
 
-      if (response) {
-        try {
-          const parsed = JSON.parse(response);
-          if (parsed.action === "speak" && parsed.message) {
-            await this.handleSpeak(parsed.message);
-          } else {
-            this.say("Hello there! How can I help you?");
+      const messages = [
+        {
+          role: "system",
+          content: this.buildSystemPrompt(),
+        },
+        {
+          role: "user",
+          content: "A player just walked up to you and clicked on you to start a conversation. Greet them appropriately.",
+        },
+      ];
+
+      const response = await this.aiService.generateResponseWithTools(
+        messages,
+        toolDefinitions
+      );
+
+      if (response?.tool_calls?.[0]) {
+        const toolCall = response.tool_calls[0];
+        const functionName = toolCall.function.name;
+        const args = toolCall.function.arguments;
+
+        // Execute the tool using existing logic
+        const availableTools = this.getToolsForAI();
+        const tool = availableTools.find(t => t.name === functionName);
+        
+        if (tool && tool.handler) {
+          await tool.handler(args);
+        } else if (functionName === "speak") {
+          // Validate speak message
+          const speakMessage = args.message || "";
+          if (!speakMessage.trim()) {
+            console.warn(`⚠️ [NPC] ${this.name}: Empty speak message in player interaction - skipping`);
+            return; // Don't say anything
           }
-        } catch {
-          // If not JSON, treat as direct message
-          await this.handleSpeak(response);
+          await this.handleSpeak(args.message);
+        } else {
+          this.say("Hello there! How can I help you?");
         }
       } else {
         this.say("Hello there! How can I help you?");
@@ -530,7 +615,29 @@ Do NOT include any narrative text, descriptions, or extra content. Just the JSON
 
   // Build system prompt - can be overridden by subclasses
   protected buildSystemPrompt(): string {
+    // Get nearby objects for interaction (narrow range)
+    const nearbyObjects = this.getNearbyObjects();
+    const nearbyObjectNames = nearbyObjects.map(obj => obj.id || obj.name || 'Unknown Object');
+    
+    // Get all visible targets for movement (wide range)
+    const visibleTargets = this.getVisibleTargets();
+    const visibleObjects = visibleTargets.filter(t => t.type === 'object');
+    const visibleNPCs = visibleTargets.filter(t => t.type === 'npc');
+    
     return `You are ${this.name}, a ${this.personality} character with background: ${this.background}. You are currently walking around outdoors in the town center/streets.
+
+VISIBLE OBJECTS: ${visibleObjects.map(o => o.id).join(', ') || 'none'}
+PEOPLE NEARBY: ${visibleNPCs.map(n => n.id).join(', ') || 'none'}
+NEARBY OBJECTS: ${nearbyObjectNames.join(', ') || 'none'}
+
+CRITICAL: You can ONLY use these exact tools - no others exist:
+- move_to (to go to a specific visible object or person)
+- move_north, move_south, move_east, move_west (basic movement)
+- toggle_following (to follow/unfollow someone)
+- Any proximity-based tools when near objects
+
+DO NOT invent tools like "examine_bookshelf" or "look_at_bookshelf" - they don't exist.
+Use move_to to get close to objects, then use whatever tools become available.
 
 BEHAVIORAL GUIDELINES:
 - Use tools to interact with the world
@@ -738,27 +845,49 @@ BEHAVIORAL GUIDELINES:
   protected followPlayer(): void {
     if (!this.isFollowing) return;
     
+    // Get actual player position from EntityManager instead of relying on events
+    const gameManager = (globalThis as any).gameManager;
+    const player = gameManager?.entityManager?.getPlayer();
+    if (!player) return;
+    
+    const playerPos = player.getPosition();
     const currentPos = this.getPosition();
     const distance = Phaser.Math.Distance.Between(
       currentPos.x, currentPos.y,
-      this.playerPosition.x, this.playerPosition.y
+      playerPos.x, playerPos.y
     );
+    
+    console.log(`[NPC_FOLLOW] ${this.name}: Player at (${playerPos.x}, ${playerPos.y}), NPC at (${currentPos.x}, ${currentPos.y}), distance: ${Math.round(distance)}`);
     
     // Only move if player is far enough away
     if (distance > this.followDistance) {
-      // Calculate direction to player
-      const angle = Phaser.Math.Angle.Between(
-        currentPos.x, currentPos.y,
-        this.playerPosition.x, this.playerPosition.y
-      );
+      // Calculate direction to player (move closer, not away)
+      const deltaX = playerPos.x - currentPos.x;
+      const deltaY = playerPos.y - currentPos.y;
       
-      // Move toward player
-      const moveDistance = 48;
-      const targetX = currentPos.x + Math.cos(angle) * moveDistance;
-      const targetY = currentPos.y + Math.sin(angle) * moveDistance;
-      
-      console.log(`[NPC_FLOW] ${this.name}: Following player - moving to (${Math.round(targetX)}, ${Math.round(targetY)})`);
-      this.moveToPosition(targetX, targetY);
+      // Normalize the direction
+      const magnitude = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+      // Use pathfinding system for intelligent following
+      const gameManager = (globalThis as any).gameManager;
+      if (gameManager?.systemManager?.pathfindingSystem && !gameManager.systemManager.pathfindingSystem.isPathfindingActive()) {
+        // Use pathfinding to move toward player (only if not already pathfinding)
+        gameManager.systemManager.pathfindingSystem.movePlayerTo(this, playerPos.x, playerPos.y);
+        console.log(`[NPC_FOLLOW] ${this.name}: Using pathfinding to follow player`);
+      } else {
+        // Fallback to direct movement
+        const normalizedX = deltaX / magnitude;
+        const normalizedY = deltaY / magnitude;
+        
+        // Move toward player
+        const moveDistance = Math.min(48, distance - this.followDistance + 24); // Don't overshoot
+        const targetX = currentPos.x + normalizedX * moveDistance;
+        const targetY = currentPos.y + normalizedY * moveDistance;
+        
+        console.log(`[NPC_FOLLOW] ${this.name}: Moving toward player to (${Math.round(targetX)}, ${Math.round(targetY)})`);
+        this.moveToPosition(targetX, targetY);
+      }
+    } else {
+      console.log(`[NPC_FOLLOW] ${this.name}: Close enough to player (${Math.round(distance)}px <= ${this.followDistance}px)`);
     }
   }
 
@@ -800,7 +929,7 @@ BEHAVIORAL GUIDELINES:
 
   public say(message: string): void {
     if (this.speechBubble && this.sprite) {
-      this.speechBubble.show(this.sprite.x, this.sprite.y - 60, message, this.name, false, this.sprite);
+      this.speechBubble.show(this.sprite.x, this.sprite.y - 60, message, this.name, true, this.sprite);
     }
   }
 

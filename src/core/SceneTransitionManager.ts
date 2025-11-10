@@ -26,8 +26,8 @@ export class SceneTransitionManager {
     try {
       console.log(`🔄 Starting scene transition: ${portalData.sourceScene} -> ${portalData.targetScene}`);
       
-      // 1. Pause all systems
-      this.gameManager.systemManager.pauseAll();
+      // 1. Pause NPCs from the source scene only
+      this.gameManager.systemManager.aiSystem.pauseSceneNPCs(portalData.sourceScene);
       
       // 2. Save current scene state
       await this.saveSceneState(portalData.sourceScene);
@@ -52,8 +52,8 @@ export class SceneTransitionManager {
     // 5. Restore state for new scene
     this.restoreSceneState(portalData.targetScene, newScene);
     
-    // 6. Resume systems
-    this.gameManager.systemManager.resumeAll();
+    // 6. Resume NPCs for the target scene only
+    this.gameManager.systemManager.aiSystem.resumeSceneNPCs(portalData.targetScene);
     
     console.log(`✅ Scene transition completed: ${portalData.targetScene}`);
   }

@@ -1353,10 +1353,8 @@ export class SmartNPC implements Character {
     // Default bounds for town scene
     let bounds = { minX: 80, maxX: 2320, minY: 120, maxY: 1680 };
 
-    // Hospital scene bounds
-    if (this.scene.scene.key === "HospitalScene") {
-      bounds = { minX: 50, maxX: 750, minY: 50, maxY: 550 };
-    }
+    // Default bounds for all scenes
+    bounds = { minX: 50, maxX: 750, minY: 50, maxY: 550 };
 
     return bounds;
   }

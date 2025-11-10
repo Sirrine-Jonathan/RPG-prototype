@@ -76,8 +76,8 @@ export class NewLibraryScene extends NewGameplayScene {
       id: 'scholar_marcus',
       name: 'Marcus Reed',
       spriteKey: 'amelia',
-      x: 240,
-      y: 200,
+      x: 200,
+      y: 180,
       personality: 'Determined scholar',
       background: 'Researcher seeking ancient texts',
       goals: ['Find the "Chronicle of Shadows" book']
@@ -104,9 +104,19 @@ export class NewLibraryScene extends NewGameplayScene {
   
   private createBookshelves(): void {
     const bookshelfData = [
-      { id: 'bookshelf_north', x: 144, y: 144, books: ['Ancient Mysteries', 'Chronicle of Shadows', 'Lost Legends'] },
-      { id: 'bookshelf_east', x: 816, y: 240, books: ['Town Records', 'Millbrook Town Records', 'Local History'] },
-      { id: 'bookshelf_south', x: 480, y: 576, books: ['Reference Guide', 'Library Catalog', 'Reading List'] }
+      // Close bookshelves (Marcus will check these first)
+      { id: 'bookshelf_north', x: 144, y: 144, books: ['Ancient Mysteries', 'Lost Legends', 'Forgotten Tales'] },
+      { id: 'bookshelf_northeast', x: 300, y: 120, books: ['Historical Documents', 'Old Manuscripts', 'Dusty Tomes'] },
+      { id: 'bookshelf_northwest', x: 80, y: 200, books: ['Reference Guide', 'Library Catalog', 'Reading List'] },
+      
+      // Medium distance bookshelves
+      { id: 'bookshelf_center', x: 400, y: 300, books: ['Town Records', 'Local History', 'Community Archives'] },
+      { id: 'bookshelf_west', x: 120, y: 400, books: ['Academic Papers', 'Research Notes', 'Study Materials'] },
+      
+      // Distant bookshelves (target book is here)
+      { id: 'bookshelf_east', x: 816, y: 240, books: ['Chronicle of Shadows', 'Millbrook Town Records', 'Secret Histories'] },
+      { id: 'bookshelf_south', x: 480, y: 576, books: ['Fiction Collection', 'Stories and Tales', 'Adventure Books'] },
+      { id: 'bookshelf_southeast', x: 700, y: 500, books: ['Modern Literature', 'Contemporary Works', 'Recent Publications'] }
     ];
     
     bookshelfData.forEach(data => {

@@ -5,6 +5,7 @@ export class MovementSystem {
   private cursors: Phaser.Types.Input.Keyboard.CursorKeys | null = null;
   private wasd: any = null;
   private currentScene: Phaser.Scene | null = null;
+  private lastDirection: string = 'down'; // Track last movement direction
   
   public initialize(): void {
     this.isActive = true;
@@ -41,6 +42,22 @@ export class MovementSystem {
     const player = gameManager.entityManager.getPlayer();
     if (!player || !this.cursors || !this.wasd) return;
     
+    // Check for input to cancel pathfinding
+    const hasInput = this.cursors.left.isDown || this.cursors.right.isDown || 
+                     this.cursors.up.isDown || this.cursors.down.isDown ||
+                     this.wasd.W.isDown || this.wasd.S.isDown || 
+                     this.wasd.A.isDown || this.wasd.D.isDown;
+    
+    if (hasInput && gameManager.systemManager.pathfindingSystem.isPathfindingActive()) {
+      // Cancel pathfinding when player presses keys
+      gameManager.systemManager.pathfindingSystem.cancelPathfinding();
+    }
+    
+    // Don't process movement if pathfinding is still active
+    if (gameManager.systemManager.pathfindingSystem.isPathfindingActive()) {
+      return;
+    }
+    
     // Handle keyboard movement
     const isChatFocused = document.activeElement?.tagName === "TEXTAREA" || 
                          document.activeElement?.tagName === "INPUT";
@@ -51,12 +68,6 @@ export class MovementSystem {
   }
   
   private handleKeyboardMovement(player: any): void {
-    // Don't handle keyboard if pathfinding is active
-    const gameManager = GameManager.getInstance();
-    if (gameManager.systemManager.pathfindingSystem.isPlayerMoving()) {
-      return;
-    }
-    
     const speed = 200;
     let moving = false;
     let direction = '';
@@ -64,6 +75,15 @@ export class MovementSystem {
     const playerPos = player.getPosition();
     let newX = playerPos.x;
     let newY = playerPos.y;
+    
+    // Cancel pathfinding if keyboard input detected
+    const gameManager = GameManager.getInstance();
+    if (this.cursors!.left.isDown || this.wasd.A.isDown || 
+        this.cursors!.right.isDown || this.wasd.D.isDown ||
+        this.cursors!.up.isDown || this.wasd.W.isDown ||
+        this.cursors!.down.isDown || this.wasd.S.isDown) {
+      gameManager.systemManager.pathfindingSystem.cancelPlayerMovement();
+    }
     
     if (this.cursors!.left.isDown || this.wasd.A.isDown) {
       newX -= (speed * this.currentScene!.game.loop.delta) / 1000;
@@ -86,6 +106,7 @@ export class MovementSystem {
     }
     
     if (moving) {
+      this.lastDirection = direction; // Update last direction
       player.setPosition(newX, newY);
       
       // Update proximity system with new player position
@@ -112,7 +133,7 @@ export class MovementSystem {
     } else {
       const sprite = player.getSprite();
       if (sprite && sprite.anims) {
-        const animKey = `adam_idle_down`;
+        const animKey = `adam_idle_${this.lastDirection}`; // Use last direction for idle
         if (sprite.scene.anims.exists(animKey)) {
           sprite.play(animKey, true);
         }

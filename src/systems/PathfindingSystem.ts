@@ -20,15 +20,41 @@ export class PathfindingSystem {
     }
   }
   
+  public isPathfindingActive(): boolean {
+    return this.isMoving;
+  }
+  
+  public cancelPathfinding(): void {
+    if (this.isMoving) {
+      console.log('🎯 PathfindingSystem: Pathfinding cancelled by user input');
+      
+      // Stop any active tweens
+      if (this.currentPlayer) {
+        const sprite = this.currentPlayer.getSprite();
+        if (sprite && sprite.scene) {
+          sprite.scene.tweens.killTweensOf(sprite);
+        }
+      }
+      
+      this.isMoving = false;
+      this.currentPath = [];
+      this.pathIndex = 0;
+      this.currentPlayer = null;
+    }
+  }
+  
   public movePlayerTo(player: any, targetX: number, targetY: number): void {
     if (!this.pathfinding || this.isMoving) {
       return;
     }
     
     const playerPos = player.getPosition();
-    const path = this.pathfinding.findPath(playerPos.x, playerPos.y, targetX, targetY);
+    const sprite = player.getSprite();
     
     console.log(`🎯 PathfindingSystem: Click-to-move from (${playerPos.x}, ${playerPos.y}) to (${targetX}, ${targetY})`);
+    console.log(`🎯 PathfindingSystem: Player sprite at (${sprite?.x}, ${sprite?.y}), visible: ${sprite?.visible}`);
+    
+    const path = this.pathfinding.findPath(playerPos.x, playerPos.y, targetX, targetY);
     console.log(`🎯 PathfindingSystem: Found path with ${path.length} steps`);
     
     if (path.length > 1) {
@@ -42,10 +68,23 @@ export class PathfindingSystem {
   
   private followPath(): void {
     if (!this.currentPlayer || this.pathIndex >= this.currentPath.length) {
-      // Path completed - play idle animation
+      // Path completed - play idle animation facing last direction
       const sprite = this.currentPlayer?.getSprite();
-      if (sprite && sprite.anims && sprite.scene.anims.exists('adam_idle_down')) {
-        sprite.play('adam_idle_down', true);
+      if (sprite && sprite.anims) {
+        // Get last direction from current animation or default to down
+        let lastDirection = 'down';
+        if (sprite.anims.currentAnim) {
+          const animName = sprite.anims.currentAnim.key;
+          if (animName.includes('_up')) lastDirection = 'up';
+          else if (animName.includes('_down')) lastDirection = 'down';
+          else if (animName.includes('_left')) lastDirection = 'left';
+          else if (animName.includes('_right')) lastDirection = 'right';
+        }
+        
+        const idleAnimKey = `adam_idle_${lastDirection}`;
+        if (sprite.scene.anims.exists(idleAnimKey)) {
+          sprite.play(idleAnimKey, true);
+        }
       }
       
       this.isMoving = false;
@@ -86,7 +125,10 @@ export class PathfindingSystem {
     // Play walking animation
     const animKey = `adam_walk_${direction}`;
     if (sprite.anims && sprite.scene.anims.exists(animKey)) {
+      console.log(`🚶 PathfindingSystem: Playing animation ${animKey} on sprite at (${sprite.x}, ${sprite.y})`);
       sprite.play(animKey, true);
+    } else {
+      console.warn(`🚶 PathfindingSystem: Animation ${animKey} not found`);
     }
     
     // Move smoothly to next point
@@ -96,7 +138,21 @@ export class PathfindingSystem {
       y: target.y,
       duration: 300,
       ease: 'Linear',
+      onUpdate: () => {
+        // Ensure animation keeps playing during tween
+        if (sprite.anims && sprite.anims.currentAnim && sprite.anims.currentAnim.key === animKey) {
+          // Animation is still playing, good
+        } else if (sprite.anims && sprite.scene.anims.exists(animKey)) {
+          // Animation stopped, restart it
+          sprite.play(animKey, true);
+        }
+      },
       onComplete: () => {
+        // Check if pathfinding was cancelled
+        if (!this.currentPlayer) {
+          return;
+        }
+        
         this.currentPlayer.setPosition(target.x, target.y);
         
         // Update proximity system with new player position
@@ -118,6 +174,12 @@ export class PathfindingSystem {
   
   public isPlayerMoving(): boolean {
     return this.isMoving;
+  }
+  
+  public cancelPlayerMovement(): void {
+    this.isMoving = false;
+    this.currentPath = [];
+    this.currentPathIndex = 0;
   }
   
   public getPathfinding(): Pathfinding | null {

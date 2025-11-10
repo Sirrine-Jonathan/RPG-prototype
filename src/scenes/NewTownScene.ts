@@ -70,14 +70,31 @@ export class NewTownScene extends NewGameplayScene {
   }
   
   protected createSceneNPCs(): void {
-    // Create Margaret Chen using specialized GuideNPC class
-    const margaret = new GuideNPC(this, 795, 880);
-    this.gameManager.entityManager.addNPC(margaret);
-    this.gameManager.entityManager.addNPCToScene('margaret_chen', this.scene.key);
+    // Create Margaret Chen using entityManager like library NPCs
+    const margaret = this.gameManager.entityManager.createNPC('margaret_chen', this, {
+      id: 'margaret_chen',
+      name: 'Margaret Chen',
+      spriteKey: 'alex',
+      x: 795,
+      y: 880,
+      personality: 'Authoritative town leader',
+      background: 'Head of City Council who welcomes visitors and provides town information',
+      goals: ['Welcome newcomers to town', 'Provide helpful information about local areas']
+    });
     
-    // Create Assistant NPC - spawn far away to test pathfinding to player
-    const assistant = new AssistantNPC(this, 200, 200);
-    this.gameManager.entityManager.addNPC(assistant);
+    // Create Assistant NPC using entityManager
+    const assistant = this.gameManager.entityManager.createNPC('assistant', this, {
+      id: 'assistant',
+      name: 'Assistant',
+      spriteKey: 'alex',
+      x: 200,
+      y: 200,
+      personality: 'Helpful and observant',
+      background: 'AI assistant dedicated to helping solve mysteries',
+      goals: ['Help the player with their investigation', 'Take notes of important observations']
+    });
+    
+    this.gameManager.entityManager.addNPCToScene('margaret_chen', this.scene.key);
     this.gameManager.entityManager.addNPCToScene('assistant', this.scene.key);
     
     console.log(`🏘️ NewTownScene: Created ${this.gameManager.entityManager.getNPCsForScene(this.scene.key).length} NPCs`);

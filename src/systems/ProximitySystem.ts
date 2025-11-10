@@ -18,58 +18,92 @@ export class ProximitySystem {
 
   constructor() {
     this.eventBus = EventBus.getInstance();
-    
+
     // Listen for NPC speech to determine if player can hear it
-    this.eventBus.subscribe('npc_speech', (event) => {
+    this.eventBus.subscribe("npc_speech", (event) => {
       this.handleNPCSpeech(event.data);
     });
 
     // Listen for player speech to notify nearby NPCs
-    this.eventBus.subscribe('player_speech', (event) => {
+    this.eventBus.subscribe("player_speech", (event) => {
       this.handlePlayerSpeech(event.data);
     });
   }
 
   addObject(obj: ProximityObject): void {
     this.objects.set(obj.id, obj);
-    console.log(`[PROXIMITY] Added object ${obj.id} to proximity tracking`);
+    const pos = obj.getPosition();
+    const tools = obj.getOfferedTools();
+    console.log(
+      `[Proximity] Added object ${obj.id} at (${pos.x}, ${pos.y}) offering ${tools.length} tools:`,
+      tools.map((t) => t.name)
+    );
   }
 
   removeObject(objId: string): void {
     this.objects.delete(objId);
-    console.log(`[PROXIMITY] Removed object ${objId} from proximity tracking`);
+    console.log(`[Proximity] Removed object ${objId} from proximity tracking`);
   }
 
   getNearbyObjects(npcId: string): ProximityObject[] {
     const npc = this.npcs.get(npcId);
-    if (!npc) return [];
+    if (!npc) {
+      console.log(
+        `[Proximity] getNearbyObjects: NPC ${npcId} not found in proximity system`
+      );
+      return [];
+    }
 
     const npcPos = npc.getPosition();
     const nearby: ProximityObject[] = [];
 
-    this.objects.forEach((obj) => {
+    console.log(
+      `[Proximity] Checking objects near ${npcId} at (${npcPos.x}, ${npcPos.y})`
+    );
+    console.log(`[Proximity] Total objects in system: ${this.objects.size}`);
+
+    this.objects.forEach((obj, objId) => {
       const objPos = obj.getPosition();
       const distance = Phaser.Math.Distance.Between(
-        npcPos.x, npcPos.y,
-        objPos.x, objPos.y
+        npcPos.x,
+        npcPos.y,
+        objPos.x,
+        objPos.y
+      );
+
+      console.log(
+        `[Proximity] Object ${objId} at (${objPos.x}, ${
+          objPos.y
+        }) - distance: ${Math.round(distance)}px (range: ${this.range}px)`
       );
 
       if (distance < this.range) {
         nearby.push(obj);
+        const tools = obj.getOfferedTools();
+        console.log(
+          `[Proximity] Object ${objId} is nearby! Offers ${tools.length} tools:`,
+          tools.map((t) => t.name)
+        );
       }
     });
 
+    console.log(
+      `[Proximity] Found ${nearby.length} nearby objects for ${npcId}`
+    );
     return nearby;
   }
   addNPC(npc: PersistentNPC): void {
     this.npcs.set(npc.id, npc);
-    console.log(`[PROXIMITY] Added NPC ${npc.name} to proximity tracking`);
+    const pos = npc.getPosition();
+    console.log(
+      `[Proximity] Added NPC ${npc.name} (${npc.id}) at (${pos.x}, ${pos.y}) to proximity tracking`
+    );
   }
 
   removeNPC(npcId: string): void {
     this.npcs.delete(npcId);
     this.proximityStates.delete(npcId);
-    console.log(`[PROXIMITY] Removed NPC ${npcId} from proximity tracking`);
+    console.log(`[Proximity] Removed NPC ${npcId} from proximity tracking`);
   }
 
   updatePlayerPosition(x: number, y: number): void {
@@ -93,7 +127,7 @@ export class ProximitySystem {
 
       if (!wasNearby && isNearby) {
         console.log(
-          `[PROXIMITY] Player entered ${npc.name}'s proximity (${Math.round(
+          `[Proximity] Player entered ${npc.name}'s proximity (${Math.round(
             distance
           )}px)`
         );
@@ -101,7 +135,7 @@ export class ProximitySystem {
         npc.triggerEvent("player_nearby", { distance: Math.round(distance) });
       } else if (wasNearby && !isNearby) {
         console.log(
-          `[PROXIMITY] Player left ${npc.name}'s proximity (${Math.round(
+          `[Proximity] Player left ${npc.name}'s proximity (${Math.round(
             distance
           )}px)`
         );
@@ -118,15 +152,18 @@ export class ProximitySystem {
     this.npcs.forEach((npc) => {
       const npcPos = npc.getPosition();
       const distance = Phaser.Math.Distance.Between(
-        this.playerX, this.playerY,
-        npcPos.x, npcPos.y
+        this.playerX,
+        this.playerY,
+        npcPos.x,
+        npcPos.y
       );
-      
+
       // If NPC is within hearing range, notify them of player speech
-      if (distance <= 150) { // Same hearing range as NPC speech
+      if (distance <= 300) {
+        // Same hearing range as NPC speech
         npc.triggerEvent("player_speech", {
           message: data.message,
-          distance: distance
+          distance: distance,
         });
       }
     });
@@ -134,16 +171,18 @@ export class ProximitySystem {
 
   private handleNPCSpeech(data: any): void {
     const distance = Phaser.Math.Distance.Between(
-      this.playerX, this.playerY,
-      data.position.x, data.position.y
+      this.playerX,
+      this.playerY,
+      data.position.x,
+      data.position.y
     );
-    
+
     // If player is within hearing range, fire player-heard event
     if (distance <= data.hearingRange) {
-      this.eventBus.emit('player-heard', {
+      this.eventBus.emit("player-heard", {
         speaker: data.speakerName,
         message: data.message,
-        distance: distance
+        distance: distance,
       });
     }
   }
@@ -223,6 +262,6 @@ export class ProximitySystem {
   clear(): void {
     this.npcs.clear();
     this.proximityStates.clear();
-    console.log(`[PROXIMITY] Cleared all NPCs from proximity tracking`);
+    console.log(`[Proximity] Cleared all NPCs from proximity tracking`);
   }
 }

@@ -1,20 +1,25 @@
 export class AISystem {
   private activeNPCs: Set<string> = new Set();
   private pausedNPCs: Set<string> = new Set();
+  private npcScenes: Map<string, string> = new Map(); // Track which scene each NPC belongs to
   
   public initialize(): void {
     console.log('🤖 AISystem: Initialized');
   }
   
-  public startNPC(npcId: string): void {
+  public startNPC(npcId: string, sceneKey?: string): void {
     this.activeNPCs.add(npcId);
     this.pausedNPCs.delete(npcId);
-    console.log(`🤖 AISystem: Started NPC ${npcId}`);
+    if (sceneKey) {
+      this.npcScenes.set(npcId, sceneKey);
+    }
+    console.log(`🤖 AISystem: Started NPC ${npcId} in scene ${sceneKey || 'unknown'}`);
   }
   
   public stopNPC(npcId: string): void {
     this.activeNPCs.delete(npcId);
     this.pausedNPCs.delete(npcId);
+    this.npcScenes.delete(npcId);
     console.log(`🤖 AISystem: Stopped NPC ${npcId}`);
   }
   
@@ -40,9 +45,26 @@ export class AISystem {
     console.log(`🤖 AISystem: Resumed all NPCs`);
   }
   
-  public resumeSceneNPCs(sceneId: string): void {
-    // TODO: Implement scene-specific NPC management
-    this.resumeAll();
+  public pauseSceneNPCs(sceneKey: string): void {
+    let pausedCount = 0;
+    this.npcScenes.forEach((npcScene, npcId) => {
+      if (npcScene === sceneKey && this.activeNPCs.has(npcId)) {
+        this.pausedNPCs.add(npcId);
+        pausedCount++;
+      }
+    });
+    console.log(`🤖 AISystem: Paused ${pausedCount} NPCs from scene ${sceneKey}`);
+  }
+  
+  public resumeSceneNPCs(sceneKey: string): void {
+    let resumedCount = 0;
+    this.npcScenes.forEach((npcScene, npcId) => {
+      if (npcScene === sceneKey) {
+        this.pausedNPCs.delete(npcId);
+        resumedCount++;
+      }
+    });
+    console.log(`🤖 AISystem: Resumed ${resumedCount} NPCs from scene ${sceneKey}`);
   }
   
   public isNPCActive(npcId: string): boolean {
@@ -52,6 +74,7 @@ export class AISystem {
   public shutdown(): void {
     this.activeNPCs.clear();
     this.pausedNPCs.clear();
+    this.npcScenes.clear();
     console.log('🤖 AISystem: Shutdown');
   }
 }

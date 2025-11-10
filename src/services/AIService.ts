@@ -489,6 +489,15 @@ React to this situation naturally as your character would.`;
             .join("\n")}\n`
         : "";
 
+    // Add library-specific behavior for book-searching NPCs
+    const libraryBehavior = context.currentGoals?.some(goal => 
+      goal.toLowerCase().includes('book') || goal.toLowerCase().includes('records')
+    ) ? `\nLIBRARY BEHAVIOR:
+- PRIORITY: Search for your target book systematically
+- Move toward objects when you see them in your visible targets
+- Use available tools to interact with objects when you're near them
+- Don't just talk about searching - take action\n` : "";
+
     const storySection = `\nSTORY CONTEXT:
 - Current Chapter: ${currentChapter}
 - Trust Level: ${storyContext.trustLevel}
@@ -539,7 +548,7 @@ CRITICAL IDENTITY: You are ${context.name}, NOT any other character. Never claim
 BACKGROUND: ${context.background}
 PERSONALITY: ${context.personality}
 CURRENT LOCATION: ${context.currentLocation}
-${goalsSection}${storySection}${conversationContext}
+${goalsSection}${libraryBehavior}${storySection}${conversationContext}
 VISIBLE OBJECTS: ${context.visibleObjects.join(", ") || "none"}
 PEOPLE NEARBY: ${context.visibleCharacters.join(", ") || "none"}
 
@@ -550,9 +559,8 @@ ${context.availableTools
 
 TOOL USAGE REQUIREMENTS:
 - ALWAYS use proper tool calls - never return narrative text
-- Use "speak" tool for all dialogue - never return plain text responses
+- ONLY use tools from your available tools list
 - Tool parameters must be objects, not strings
-- For toggle_following, use "follow" parameter (true/false), not "following"
 
 BEHAVIORAL GUIDELINES:
 - CRITICAL: When a player speaks to you directly (says your name, greets you, asks you questions), respond TO THEM directly
@@ -567,29 +575,29 @@ BEHAVIORAL GUIDELINES:
 - Build relationships that support your goals by being accommodating first
 
 INTERACTION PRIORITIES (in order):
-1. RESPOND TO PLAYER SPEECH - If a player spoke to you, use "speak" tool to reply (MANDATORY)
-2. Respond to direct player commands/requests (but with your own agenda)
-3. Take actions that advance your current goals through cooperation
-4. If you see characters who might help your objectives, engage them
-5. If engaged in conversation, steer it toward your interests while being helpful
-6. If alone, move around to find others who might have useful information
-7. Only wait or patrol if no goal-oriented opportunities exist
+1. RESPOND TO PLAYER SPEECH - If a player spoke to you, respond appropriately
+2. USE AVAILABLE TOOLS - Use tools that help achieve your goals
+3. Respond to direct player commands/requests (but with your own agenda)
+4. Take actions that advance your current goals through cooperation
+5. If you see characters who might help your objectives, engage them
+6. If engaged in conversation, steer it toward your interests while being helpful
+7. If alone, move around to find others who might have useful information
+8. Only wait or patrol if no goal-oriented opportunities exist
 
 Remember: Be helpful and responsive to players, but always with your hidden agenda in mind!
 
 CRITICAL INSTRUCTIONS:
 - YOU MUST USE ONE OF THE AVAILABLE TOOLS - NO EXCEPTIONS
-- DO NOT generate text responses or descriptions
-- ONLY respond with valid JSON: {"action": "tool_name", "parameters": {...}, "reasoning": "brief reason"}
-- Keep reasoning under 20 words and relate it to your goals when possible
-- ACT in ways that advance your current objectives
+- ONLY use tools that are in your available tools list
+- Take actions that advance your current objectives
 
 SPEAK TOOL REQUIREMENTS:
-- When using the "speak" tool, ALWAYS provide a COMPLETE sentence or thought
+- NEVER provide empty messages or just ""
 - NEVER end messages with incomplete contractions like "I couldn't" or "I don't"
 - If you start a sentence, finish it completely
 - Examples: "I couldn't help but notice..." NOT "I couldn't"
 - Examples: "I don't think that's right" NOT "I don't"
+- Examples: "Not yet, I'm still searching the bookshelves" NOT ""
 - Make your speech meaningful and complete
 
 LEARNING FROM FAILURES:
@@ -601,7 +609,7 @@ LEARNING FROM FAILURES:
   }
 
   private buildNPCUserPrompt(context: NPCContext): string {
-    return `You MUST respond with a tool call. Do not write any text. Only use the available tools. Choose one tool now.`;
+    return `Choose the most appropriate action for your current situation.`;
   }
 
   private parseNPCResponse(content: string): {
@@ -688,18 +696,51 @@ LEARNING FROM FAILURES:
     return "That's... interesting. Tell me more.";
   }
 
+  private tryParseContentAsAction(content: string): {name: string, parameters?: any} | null {
+    try {
+      // Try to extract JSON from content
+      const jsonMatch = content.match(/\{[^{}]*"name"[^{}]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        if (parsed.name) {
+          return parsed;
+        }
+      }
+      
+      // Try simple action detection
+      const actionWords = ['move_north', 'move_south', 'move_east', 'move_west', 'speak', 'take_a_break'];
+      for (const action of actionWords) {
+        if (content.toLowerCase().includes(action)) {
+          return { name: action };
+        }
+      }
+      
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   async generateResponseWithTools(messages: any[], tools: any[]): Promise<any> {
     try {
       const npcName = messages.find(m => m.role === 'system')?.content?.match(/You are (\w+)/)?.[1] || 'Unknown';
       console.log(`[AI] ${npcName}: Request (${messages.length} msgs, ${tools.length} tools)`);
+      console.log(`[AI] ${npcName}: SYSTEM PROMPT:`, messages[0]?.content?.substring(0, 200) + '...');
+      console.log(`[AI] ${npcName}: CONVERSATION HISTORY:`, messages.slice(1, -1).map(m => `${m.role}: ${m.content?.substring(0, 50)}...`).join(' | '));
+      console.log(`[AI] ${npcName}: USER MESSAGE:`, messages[messages.length - 1]?.content);
+      console.log(`[AI] ${npcName}: TOOLS:`, tools.map(t => t.function.name).join(', '));
+      console.log(`[AI] ${npcName}: VISIBLE OBJECTS:`, messages[0]?.content?.match(/VISIBLE OBJECTS: ([^\n]*)/)?.[1] || 'none');
       
       const requestBody = {
-        model: "llama3.2:3b",
+        model: "qwen3:8b",
         messages: messages,
         tools: tools,
+        tool_choice: "required", // Force tool use
         stream: false,
         options: {
-          temperature: 0.1,
+          temperature: 0.01, // Very low temperature for consistency
+          top_p: 0.7,
+          repeat_penalty: 1.1,
         }
       };
 
@@ -718,14 +759,63 @@ LEARNING FROM FAILURES:
 
       const data = await response.json();
       
-      // Log only critical response info
+      // Check for old JSON format and retry if needed
+      if (!data.message?.tool_calls?.length && data.message?.content) {
+        const hasOldJsonFormat = data.message.content.includes('"name"') || data.message.content.includes('"action"');
+        if (hasOldJsonFormat) {
+          console.log(`⚠️ [AI] ${npcName}: Detected old JSON format: "${data.message.content}"`);
+          console.log(`⚠️ [AI] ${npcName}: Retrying with stronger enforcement`);
+          
+          // Retry with stronger system message
+          const retryMessages = [...messages];
+          retryMessages[0].content += '\n\nCRITICAL: You MUST use proper tool calls. DO NOT return JSON text. Use the tool calling system only.';
+          
+          const retryResponse = await fetch("http://localhost:11434/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ...requestBody,
+              messages: retryMessages,
+              options: {
+                temperature: 0.01, // Very low temperature
+                top_p: 0.8,
+              }
+            }),
+          });
+          
+          if (retryResponse.ok) {
+            const retryData = await retryResponse.json();
+            if (retryData.message?.tool_calls?.length) {
+              console.log(`✅ [AI] ${npcName}: Retry successful with proper tool calls`);
+              return retryData.message;
+            } else {
+              // If retry also failed, try to parse the content as fallback
+        if (!response.message.tool_calls && response.content) {
+          console.log(`⚠️ [AI] ${npcName}: Both attempts failed, trying content parsing as last resort`);
+          const parsed = this.tryParseContentAsAction(response.content);
+          if (parsed) {
+            // Convert to tool call format
+            response.message.tool_calls = [{
+              function: {
+                name: parsed.name,
+                arguments: JSON.stringify(parsed.parameters || {})
+              }
+            }];
+            console.log(`✅ [AI] ${npcName}: Recovered action from content: ${parsed.name}`);
+          }
+        }
+            }
+          }
+        }
+      }
+      
+      // Log critical response info for debugging
       if (data.message?.tool_calls?.[0]) {
         const tool = data.message.tool_calls[0];
         console.log(`[AI] ${npcName}: Tool -> ${tool.function.name}(${JSON.stringify(tool.function.arguments)})`);
-      } else if (data.message?.content) {
-        console.log(`[AI] ${npcName}: Text -> "${data.message.content.substring(0, 100)}..."`);
       } else {
-        console.log(`[AI] ${npcName}: ERROR -> No tool call or content`);
+        console.log(`[AI] ${npcName}: ERROR -> No tool call received`);
+        console.log(`[AI] ${npcName}: RAW RESPONSE:`, JSON.stringify(data, null, 2));
       }
       
       return data.message;
@@ -735,49 +825,54 @@ LEARNING FROM FAILURES:
     }
   }
 
-  // Legacy method for backward compatibility
+  // Legacy method for backward compatibility - DEPRECATED
   async generateResponse(
     personality: string,
     userMessage: string,
     conversationHistory: any[] = []
   ): Promise<string> {
-    try {
-      console.log(`[LLM_FLOW] ===== LEGACY OLLAMA REQUEST START =====`);
-      
-      const prompt = `You are ${personality}. Keep responses under 100 words. Stay in character.\n\nUser: ${userMessage}\nResponse:`;
-      
-      console.log(`[LLM_FLOW] Legacy Prompt:`, prompt);
-      console.log(`[LLM_FLOW] Conversation History:`, JSON.stringify(conversationHistory, null, 2));
-      
-      const requestBody = {
-        model: "llama3.2:3b",
-        prompt: prompt,
-        stream: false,
-      };
-      
-      console.log(`[LLM_FLOW] Legacy Request Body:`, JSON.stringify(requestBody, null, 2));
+    console.warn("⚠️ DEPRECATED: generateResponse() called - use generateResponseWithTools() instead");
+    
+    // Convert to tool-based approach
+    const context: NPCContext = {
+      name: personality,
+      background: "Character",
+      personality: personality,
+      currentLocation: "unknown",
+      visibleObjects: [],
+      visibleCharacters: [],
+      availableTools: [
+        { name: "speak", description: "Say something to nearby characters" }
+      ]
+    };
 
-      const response = await fetch(this.baseUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
-      });
-
-      console.log(`[LLM_FLOW] Legacy Response Status: ${response.status}`);
-
-      if (!response.ok) {
-        console.log(`[LLM_FLOW] Legacy ERROR: HTTP ${response.status}`);
-        throw new Error(`HTTP ${response.status}`);
+    const tools = [{
+      type: "function",
+      function: {
+        name: "speak",
+        description: "Say something to nearby characters",
+        parameters: {
+          type: "object",
+          properties: {
+            message: { type: "string", description: "What to say" }
+          }
+        }
       }
+    }];
 
-      const data = await response.json();
-      console.log(`[LLM_FLOW] Legacy Raw Response:`, JSON.stringify(data, null, 2));
-      console.log(`[LLM_FLOW] Legacy Response Text:`, data.response);
-      console.log(`[LLM_FLOW] ===== LEGACY OLLAMA REQUEST END =====`);
-      
-      return data.response;
+    const messages = [
+      { role: "system", content: `You are ${personality}. Keep responses under 100 words. Stay in character.` },
+      { role: "user", content: userMessage }
+    ];
+
+    try {
+      const response = await this.generateResponseWithTools(messages, tools);
+      if (response?.tool_calls?.[0]?.function?.arguments?.message) {
+        return response.tool_calls[0].function.arguments.message;
+      }
+      return "Hello there.";
     } catch (error) {
-      console.warn(`[LLM_FLOW] Legacy AI service failed, using fallback:`, error);
+      console.warn("Legacy fallback failed:", error);
       return this.getLegacyFallbackResponse(personality);
     }
   }

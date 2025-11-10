@@ -55,6 +55,25 @@ export class PersistentPlayer {
     }
   }
   
+  public moveToPosition(x: number, y: number, duration: number = 500): void {
+    if (!this.sprite || !this.currentScene) return;
+    
+    const distance = Math.sqrt(Math.pow(x - this.sprite.x, 2) + Math.pow(y - this.sprite.y, 2));
+    const adjustedDuration = Math.max(200, Math.min(1000, distance * 2)); // Scale duration with distance
+    
+    this.currentScene.tweens.add({
+      targets: this.sprite,
+      x: x,
+      y: y,
+      duration: adjustedDuration,
+      ease: 'Power2',
+      onComplete: () => {
+        this.position.x = x;
+        this.position.y = y;
+      }
+    });
+  }
+  
   public getPosition(): { x: number, y: number } {
     if (this.sprite) {
       return { x: this.sprite.x, y: this.sprite.y };

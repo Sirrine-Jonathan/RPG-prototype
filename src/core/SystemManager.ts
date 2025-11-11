@@ -2,12 +2,14 @@ import { MovementSystem } from '../systems/MovementSystem';
 import { AISystem } from '../systems/AISystem';
 import { PathfindingSystem } from '../systems/PathfindingSystem';
 import { CameraSystem } from '../systems/CameraSystem';
+import { BoundarySystem } from '../systems/BoundarySystem';
 
 export class SystemManager {
   public movementSystem: MovementSystem;
   public aiSystem: AISystem;
   public pathfindingSystem: PathfindingSystem;
   public cameraSystem: CameraSystem;
+  public boundarySystem: BoundarySystem;
   
   private game: Phaser.Game | null = null;
   
@@ -16,6 +18,7 @@ export class SystemManager {
     this.aiSystem = new AISystem();
     this.pathfindingSystem = new PathfindingSystem();
     this.cameraSystem = new CameraSystem();
+    this.boundarySystem = BoundarySystem.getInstance();
   }
   
   public initialize(game: Phaser.Game): void {

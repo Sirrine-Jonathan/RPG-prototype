@@ -64,11 +64,53 @@ export class MainMenuScene extends Scene {
 
   startNewGame() {
     console.log("Starting new game...");
+    // Clear any saved game state
+    localStorage.removeItem('whispering_stones_save');
     this.scene.start("NewTownScene"); // Use new architecture
   }
 
   loadGame() {
-    // TODO: Implement load game functionality
     console.log("Loading game...");
+    
+    // Check if there's a saved game
+    const savedGame = localStorage.getItem('whispering_stones_save');
+    
+    if (savedGame) {
+      try {
+        const gameState = JSON.parse(savedGame);
+        console.log("Loading saved game state:", gameState);
+        
+        // Start the saved scene
+        this.scene.start(gameState.currentScene, { loadedState: gameState });
+      } catch (error) {
+        console.error("Failed to load game:", error);
+        // Fallback to new game
+        this.startNewGame();
+      }
+    } else {
+      console.log("No saved game found, creating library test save...");
+      // Create a test save state for library scene
+      const testSave = {
+        currentScene: 'NewLibraryScene',
+        playerPosition: { x: 400, y: 300 },
+        playerInventory: [
+          {
+            id: "Maya's Photo",
+            name: "Maya's Photo",
+            description: "A recent photo of Maya, the missing person. She appears to be a young woman with dark hair, smiling at the camera. In the background, you can clearly see the town library's distinctive arched entrance. Maya is holding what looks like an old book or journal.",
+            category: 'evidence'
+          }
+        ],
+        gameProgress: {
+          metMargaret: true,
+          hasPhoto: true,
+          currentObjective: 'investigate_library'
+        }
+      };
+      
+      // Save and load the test state
+      localStorage.setItem('whispering_stones_save', JSON.stringify(testSave));
+      this.scene.start('NewLibraryScene', { loadedState: testSave });
+    }
   }
 }

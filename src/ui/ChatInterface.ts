@@ -2,6 +2,7 @@ import { Scene } from "phaser";
 import { SmartNPC } from "../entities/SmartNPC";
 import { AIService } from "../services/AIService";
 import { EventBus } from "../systems/EventBus";
+import { InventorySystem } from "../systems/InventorySystem";
 
 interface TownMessage {
   type: "speech" | "action" | "note";
@@ -65,6 +66,9 @@ export class ChatInterface {
       );
       gameManager.eventBus.subscribe("assistant-noted", (event: any) =>
         this.onAssistantNoted(event.data)
+      );
+      gameManager.eventBus.subscribe("player-inventory-updated", (event: any) =>
+        this.updateInventoryArea()
       );
     }
 
@@ -885,13 +889,53 @@ export class ChatInterface {
 
   private updateInventoryArea() {
     this.inventoryArea.innerHTML =
-      '<h3 style="color: white; margin: 0 0 15px 0;">Inventory</h3>';
+      '<h3 style="color: white; margin: 0 0 15px 0;">Player Inventory</h3>';
 
-    const emptyMessage = document.createElement("p");
-    emptyMessage.style.cssText =
-      "color: #888; font-style: italic; text-align: center; margin-top: 50px;";
-    emptyMessage.textContent = "Inventory system not yet implemented.";
-    this.inventoryArea.appendChild(emptyMessage);
+    const inventorySystem = InventorySystem.getInstance();
+    // Use the actual player ID from PersistentPlayer
+    const gameManager = (globalThis as any).gameManager;
+    const playerId = gameManager?.persistentPlayer?.id || 'Detective Riley';
+    const playerInventory = inventorySystem.getInventory(playerId);
+
+    if (playerInventory.length === 0) {
+      const emptyMessage = document.createElement("p");
+      emptyMessage.style.cssText =
+        "color: #888; font-style: italic; text-align: center; margin-top: 50px;";
+      emptyMessage.textContent = "No items in inventory.";
+      this.inventoryArea.appendChild(emptyMessage);
+      return;
+    }
+
+    playerInventory.forEach(item => {
+      const itemDiv = document.createElement("div");
+      itemDiv.style.cssText = `
+        padding: 12px;
+        margin-bottom: 8px;
+        background: rgba(100, 100, 100, 0.2);
+        border: 1px solid #666;
+        border-radius: 8px;
+        color: white;
+      `;
+
+      const nameDiv = document.createElement("div");
+      nameDiv.style.cssText = "font-weight: bold; margin-bottom: 4px;";
+      nameDiv.textContent = item.name;
+
+      const descDiv = document.createElement("div");
+      descDiv.style.cssText = "font-size: 12px; color: #ccc;";
+      descDiv.textContent = item.description;
+
+      if (item.category) {
+        const categoryDiv = document.createElement("div");
+        categoryDiv.style.cssText = "font-size: 10px; color: #888; margin-top: 4px;";
+        categoryDiv.textContent = `Category: ${item.category}`;
+        itemDiv.appendChild(categoryDiv);
+      }
+
+      itemDiv.appendChild(nameDiv);
+      itemDiv.appendChild(descDiv);
+      this.inventoryArea.appendChild(itemDiv);
+    });
   }
 
   destroy() {

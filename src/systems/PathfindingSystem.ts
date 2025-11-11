@@ -81,10 +81,17 @@ export class PathfindingSystem {
           else if (animName.includes('_right')) lastDirection = 'right';
         }
         
-        const idleAnimKey = `adam_idle_${lastDirection}`;
+        const spriteKey = this.currentPlayer.config?.spriteKey || 'adam';
+        const idleAnimKey = `${spriteKey}_idle_${lastDirection}`;
         if (sprite.scene.anims.exists(idleAnimKey)) {
           sprite.play(idleAnimKey, true);
         }
+      }
+      
+      // Call resolve function if this is an NPC waiting for movement completion
+      if (this.currentPlayer._moveResolve) {
+        this.currentPlayer._moveResolve(); // Just resolve the Promise, return value handled in handleMoveTo
+        delete this.currentPlayer._moveResolve;
       }
       
       this.isMoving = false;
@@ -123,7 +130,8 @@ export class PathfindingSystem {
     }
     
     // Play walking animation
-    const animKey = `adam_walk_${direction}`;
+    const spriteKey = this.currentPlayer.config?.spriteKey || 'adam';
+    const animKey = `${spriteKey}_walk_${direction}`;
     if (sprite.anims && sprite.scene.anims.exists(animKey)) {
       console.log(`🚶 PathfindingSystem: Playing animation ${animKey} on sprite at (${sprite.x}, ${sprite.y})`);
       sprite.play(animKey, true);

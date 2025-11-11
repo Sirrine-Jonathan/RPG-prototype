@@ -15,6 +15,10 @@ export class SpeechBubble {
     }
     
     show(x: number, y: number, message: string, speaker: string = 'NPC', autoHide: boolean = false, followTarget?: Phaser.GameObjects.Sprite) {
+        if (!message) {
+            console.warn(`🎈 SpeechBubble.show: Empty message for ${speaker}, skipping`);
+            return;
+        }
         console.log(`🎈 SpeechBubble.show called for ${speaker} with message: "${message}" (length: ${message.length})`);
         
         // Clean up existing bubble

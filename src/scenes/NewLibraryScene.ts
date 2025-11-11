@@ -2,14 +2,22 @@ import { NewGameplayScene } from "./NewGameplayScene";
 import { LevelLoader } from "../systems/LevelLoader";
 import { PortalService } from "../systems/PortalService";
 import { Bookshelf } from "../entities/Bookshelf";
+import { ChatInterface } from "../ui/ChatInterface";
+import { InventorySystem } from "../systems/InventorySystem";
 
 export class NewLibraryScene extends NewGameplayScene {
   private levelLoader!: LevelLoader;
   private portalService!: PortalService;
   private bookshelves: Map<string, Bookshelf> = new Map();
+  private loadedState: any = null;
   
   constructor() {
     super({ key: 'NewLibraryScene' });
+  }
+  
+  init(data: any) {
+    this.loadedState = data.loadedState;
+    console.log('📚 NewLibraryScene: Initialized with loaded state:', this.loadedState);
   }
   
   protected loadSceneContent(): void {
@@ -17,15 +25,43 @@ export class NewLibraryScene extends NewGameplayScene {
     this.levelLoader = new LevelLoader(this);
     this.portalService = new PortalService(this);
     
+    // Initialize ChatInterface for inventory
+    ChatInterface.getInstance(this);
+    
     // Load library level
     this.levelLoader.loadLevel("library_interior").then(() => {
       console.log(`📚 NewLibraryScene: Library level loaded`);
       this.setupPortalsAndSpawns();
-      // Always create NPCs after level loads
       this.createSceneNPCs();
+      
+      // Restore loaded state if available
+      if (this.loadedState) {
+        this.restoreGameState();
+      }
     }).catch(error => {
       console.error("Failed to load library level:", error);
     });
+  }
+  
+  private restoreGameState(): void {
+    console.log('📚 Restoring game state in library...');
+    
+    // Restore player inventory
+    if (this.loadedState.playerInventory) {
+      const inventorySystem = InventorySystem.getInstance();
+      this.loadedState.playerInventory.forEach((item: any) => {
+        inventorySystem.addItem('player', item);
+        console.log(`📚 Restored item to player inventory: ${item.name}`);
+      });
+    }
+    
+    // Position player if specified
+    if (this.loadedState.playerPosition && this.player) {
+      this.player.setPosition(this.loadedState.playerPosition.x, this.loadedState.playerPosition.y);
+      console.log(`📚 Positioned player at: ${this.loadedState.playerPosition.x}, ${this.loadedState.playerPosition.y}`);
+    }
+    
+    console.log('📚 Game state restored successfully');
   }
   
   private setupPortalsAndSpawns(): void {
@@ -71,6 +107,18 @@ export class NewLibraryScene extends NewGameplayScene {
   protected createSceneNPCs(): void {
     console.log(`📚 NewLibraryScene: Creating library NPCs...`);
     
+    // Create librarian who knew Maya
+    const librarian = this.gameManager.entityManager.createNPC('librarian_sarah', this, {
+      id: 'librarian_sarah',
+      name: 'Sarah Mills',
+      spriteKey: 'amelia',
+      x: 400,
+      y: 200,
+      personality: 'Helpful librarian who remembers Maya',
+      background: 'Head librarian who helped Maya with her research into local folklore and missing persons cases',
+      goals: ['Help visitors find books', 'Share information about Maya\'s research interests']
+    });
+    
     // Create book-seeking NPCs (no custom tools - they get tools from nearby objects)
     const scholar = this.gameManager.entityManager.createNPC('scholar_marcus', this, {
       id: 'scholar_marcus',
@@ -94,10 +142,12 @@ export class NewLibraryScene extends NewGameplayScene {
       goals: ['Find the "Millbrook Town Records" book']
     });
     
+    this.gameManager.entityManager.addNPCToScene('librarian_sarah', this.scene.key);
     this.gameManager.entityManager.addNPCToScene('scholar_marcus', this.scene.key);
     this.gameManager.entityManager.addNPCToScene('historian_vera', this.scene.key);
     
     console.log(`📚 NewLibraryScene: Created ${this.gameManager.entityManager.getNPCsForScene(this.scene.key).length} NPCs`);
+    console.log(`📚 NewLibraryScene: Librarian at (${librarian.getPosition().x}, ${librarian.getPosition().y})`);
     console.log(`📚 NewLibraryScene: Scholar at (${scholar.getPosition().x}, ${scholar.getPosition().y})`);
     console.log(`📚 NewLibraryScene: Historian at (${historian.getPosition().x}, ${historian.getPosition().y})`);
   }
@@ -114,7 +164,7 @@ export class NewLibraryScene extends NewGameplayScene {
       { id: 'bookshelf_west', x: 120, y: 400, books: ['Academic Papers', 'Research Notes', 'Study Materials'] },
       
       // Distant bookshelves (target book is here)
-      { id: 'bookshelf_east', x: 816, y: 240, books: ['Chronicle of Shadows', 'Millbrook Town Records', 'Secret Histories'] },
+      { id: 'bookshelf_east', x: 816, y: 240, books: ['Chronicle of Shadows', 'Millbrook Town Records', 'Maya\'s Research Journal', 'Secret Histories'] },
       { id: 'bookshelf_south', x: 480, y: 576, books: ['Fiction Collection', 'Stories and Tales', 'Adventure Books'] },
       { id: 'bookshelf_southeast', x: 700, y: 500, books: ['Modern Literature', 'Contemporary Works', 'Recent Publications'] }
     ];

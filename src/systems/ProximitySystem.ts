@@ -93,10 +93,15 @@ export class ProximitySystem {
     return nearby;
   }
   addNPC(npc: PersistentNPC): void {
+    if (this.npcs.has(npc.id)) {
+      console.log(`[Proximity] NPC ${npc.id} already exists, skipping duplicate`);
+      return;
+    }
+    
     this.npcs.set(npc.id, npc);
     const pos = npc.getPosition();
     console.log(
-      `[Proximity] Added NPC ${npc.name} (${npc.id}) at (${pos.x}, ${pos.y}) to proximity tracking`
+      `[Proximity] Added NPC ${npc.id} at (${pos.x}, ${pos.y}) to proximity tracking`
     );
   }
 

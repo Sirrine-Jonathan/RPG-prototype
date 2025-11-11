@@ -4,6 +4,7 @@ import { InteractiveObject } from "./InteractiveObject";
 import { SpeechBubble } from "../ui/SpeechBubble";
 import { Pathfinding } from "../utils/Pathfinding";
 import { Debug } from "../utils/Debug";
+import { Logger, LogTag } from "../utils/Logger";
 
 const ACTION_DELAY = 20000; // 20 seconds between timed actions (fallback only)
 const LINE_OF_SIGHT_RANGE = 150;
@@ -27,6 +28,7 @@ export class SmartNPC implements Character {
   private aiService: AIService;
   private actionTimer?: Phaser.Time.TimerEvent;
   private speechBubble: SpeechBubble;
+  private logger = Logger.getInstance();
 
   // LLM request tracking
   private lastLLMRequest: number = 0;
@@ -86,6 +88,9 @@ export class SmartNPC implements Character {
     this.aiService = AIService.getInstance();
     this.speechBubble = new SpeechBubble(scene);
     this.pathfinding = new Pathfinding(30, 2400, 1800);
+
+    // Log NPC creation
+    this.logger.npcBehavior(this.name, `Created NPC at (${x}, ${y}) with role: ${role}`);
 
     // Initialize known landmarks
     this.initializeKnownLandmarks();

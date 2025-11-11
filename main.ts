@@ -1,13 +1,8 @@
 import { Game, AUTO } from "phaser";
 import { MainMenuScene } from "./src/scenes/MainMenuScene";
-import { SecurityStationScene } from "./src/scenes/SecurityStationScene";
-import { ResearchLabScene } from "./src/scenes/ResearchLabScene";
-import { MedicalBayScene } from "./src/scenes/MedicalBayScene";
-import { EngineeringBayScene } from "./src/scenes/EngineeringBayScene";
-import { TileIndexViewerScene } from "./src/scenes/TileIndexViewerScene";
-import { PropsViewerScene } from "./src/scenes/PropsViewerScene";
 import { NewTownScene } from "./src/scenes/NewTownScene";
 import { NewLibraryScene } from "./src/scenes/NewLibraryScene";
+import { PoliceStationScene } from "./src/scenes/PoliceStationScene";
 import { GameManager } from "./src/core/GameManager";
 
 const config = {
@@ -22,14 +17,9 @@ const config = {
   },
   scene: [
     MainMenuScene,
-    SecurityStationScene,
-    ResearchLabScene,
-    MedicalBayScene,
-    EngineeringBayScene,
-    TileIndexViewerScene,
-    PropsViewerScene,
     NewTownScene,
     NewLibraryScene,
+    PoliceStationScene,
   ],
 };
 

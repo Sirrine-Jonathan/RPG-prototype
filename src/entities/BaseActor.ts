@@ -1,3 +1,6 @@
+import { InventorySystem, InventoryItem } from '../systems/InventorySystem';
+import { PositionTracker } from '../systems/PositionTracker';
+
 export interface Tool {
   name: string;
   description: string;
@@ -40,14 +43,18 @@ export abstract class BaseActor {
   protected getNearbyObjects(): any[] {
     const gameManager = (globalThis as any).gameManager;
     if (!gameManager || !gameManager.proximitySystem) {
-      console.log(`[Proximity] ${this.name}: No proximity system available`);
+      console.log(`[LLM][Interface][${this.name}] No proximity system available`);
       return [];
     }
     
     const nearbyObjects = gameManager.proximitySystem.getNearbyObjects(this.id);
-    console.log(`[Proximity] ${this.name}: Found ${nearbyObjects.length} nearby objects at position (${this.getPosition().x}, ${this.getPosition().y})`);
+    console.log(`[LLM][Interface][${this.name}] Found ${nearbyObjects.length} nearby objects at position (${this.getPosition().x}, ${this.getPosition().y})`);
     if (nearbyObjects.length > 0) {
-      console.log(`[Proximity] ${this.name}: Objects:`, nearbyObjects.map(obj => `${obj.id || obj.name} at (${obj.getPosition().x}, ${obj.getPosition().y})`));
+      console.log(`[LLM][Interface][${this.name}] Objects:`, nearbyObjects.map(obj => `${obj.id || obj.name} at (${obj.getPosition().x}, ${obj.getPosition().y})`));
+      nearbyObjects.forEach(obj => {
+        const offeredTools = obj.getOfferedTools();
+        console.log(`[LLM][Interface][${this.name}] ${obj.id || obj.name} offers ${offeredTools.length} tools:`, offeredTools.map(t => t.name));
+      });
     }
     
     return nearbyObjects;
@@ -87,6 +94,11 @@ export abstract class BaseActor {
         name: 'move_west',
         description: 'Move west',
         handler: async () => this.handleMove('west')
+      },
+      {
+        name: 'check_inventory',
+        description: 'Check what items you are carrying',
+        handler: async () => this.handleCheckInventory()
       }
     ];
   }
@@ -97,6 +109,7 @@ export abstract class BaseActor {
     
     // Add 'speak' tool only if other actors are nearby
     if (this.hasNearbyActors()) {
+      console.log(`[LLM][Interface][${this.name}] Adding speak tool - nearby actors detected`);
       tools.push({
         name: 'speak',
         description: 'Speak to nearby characters',
@@ -109,6 +122,19 @@ export abstract class BaseActor {
         },
         handler: async (params) => this.handleSpeak(params.message)
       });
+    } else {
+      console.log(`[LLM][Interface][${this.name}] No speak tool - no nearby actors`);
+    }
+
+    // Add inventory tools if holding items
+    const inventory = InventorySystem.getInstance().getInventory(this.id);
+    console.log(`[LLM][Interface][${this.name}] Inventory check: ${inventory.length} items found`);
+    if (inventory.length > 0) {
+      console.log(`[LLM][Interface][${this.name}] Items:`, inventory.map(item => `${item.name} (${item.id})`));
+      
+      console.log(`[LLM][Interface][${this.name}] No give tool - handled by nearby objects now`);
+    } else {
+      console.log(`[LLM][Interface][${this.name}] No give tool - no items in inventory`);
     }
     
     // Add take_a_break tool for all NPCs
@@ -124,6 +150,7 @@ export abstract class BaseActor {
       handler: async (params) => this.handleTakeBreak(params.reason)
     });
     
+    console.log(`[LLM][Interface][${this.name}] Total conditional tools: ${tools.length}`);
     return tools;
   }
   
@@ -177,23 +204,23 @@ export abstract class BaseActor {
         console.log(`[Proximity] ${this.name}: No NPCs Map found in proximitySystem`);
       }
       
-      // Add the player as a valid target
+      // Add the player as a valid target (only if not already added as an object)
       const player = gameManager.entityManager.getPlayer();
-      if (player) {
+      if (player && !targets.find(t => t.id === player.id)) {
         const pos = player.getPosition();
         targets.push({
-          id: 'player',
-          name: 'Player',
+          id: player.id,
+          name: player.id,
           type: 'player',
           position: pos
         });
-        console.log(`[Proximity] ${this.name}: Added Player at (${pos.x}, ${pos.y})`);
+        console.log(`[Proximity] ${this.name}: Added Player ${player.id} at (${pos.x}, ${pos.y})`);
       }
     } else {
       console.log(`[Proximity] ${this.name}: No proximitySystem available`);
     }
     
-    console.log(`[Proximity] ${this.name}: Found ${targets.length} visible targets for move_to:`, targets.map(t => `${t.id} (${t.type})`));
+    console.log(`[Proximity] ${this.name}: Found ${targets.length} visible targets for move_to:`, targets.map(t => t.id));
     return targets;
   }
   
@@ -227,31 +254,42 @@ export abstract class BaseActor {
       (targetPos.x - currentPos.x) ** 2 + (targetPos.y - currentPos.y) ** 2
     );
     
-    if (distance < 48) {
+    // Stop just inside interaction range (48px)
+    const interactionDistance = 45; // Just inside 48px range
+    
+    if (distance < interactionDistance) {
       return { success: true, message: `Already near ${target.name}` };
     }
+    
+    // Calculate target position that maintains interaction distance
+    const dx = targetPos.x - currentPos.x;
+    const dy = targetPos.y - currentPos.y;
+    const normalizedDx = dx / distance;
+    const normalizedDy = dy / distance;
+    
+    // Move from current position toward target, stopping just short
+    const moveDistance = distance - interactionDistance;
+    const finalTargetX = currentPos.x + normalizedDx * moveDistance;
+    const finalTargetY = currentPos.y + normalizedDy * moveDistance;
     
     // Use pathfinding system for intelligent movement
     const gameManager = (globalThis as any).gameManager;
     if (gameManager?.systemManager?.pathfindingSystem) {
-      gameManager.systemManager.pathfindingSystem.movePlayerTo(this, targetPos.x, targetPos.y);
-      console.log(`[NPC_FLOW] ${this.name}: Using pathfinding to move toward ${target.name} at (${targetPos.x}, ${targetPos.y})`);
-      return { success: true, message: `${this.name} moved toward ${target.name}` };
+      // Create a Promise wrapper around pathfinding system
+      await new Promise<void>((resolve) => {
+        // Store the resolve function so pathfinding can call it when done
+        (this as any)._moveResolve = resolve;
+        
+        gameManager.systemManager.pathfindingSystem.movePlayerTo(this, finalTargetX, finalTargetY);
+        console.log(`[NPC_FLOW] ${this.name}: Using pathfinding to move toward ${target.name} at (${finalTargetX}, ${finalTargetY})`);
+      });
     } else {
       // Fallback to direct movement if pathfinding unavailable
-      const dx = targetPos.x - currentPos.x;
-      const dy = targetPos.y - currentPos.y;
-      const moveDistance = 48;
-      const normalizedDx = dx / distance;
-      const normalizedDy = dy / distance;
-      
-      const newX = currentPos.x + (normalizedDx * moveDistance);
-      const newY = currentPos.y + (normalizedDy * moveDistance);
-      
-      this.moveToPosition(newX, newY);
-      console.log(`[NPC_FLOW] ${this.name}: Moving toward ${target.name} at (${targetPos.x}, ${targetPos.y})`);
-      return { success: true, message: `${this.name} moved toward ${target.name}` };
+      await this.moveToPosition(finalTargetX, finalTargetY);
+      console.log(`[NPC_FLOW] ${this.name}: Moving toward ${target.name} at (${finalTargetX}, ${finalTargetY})`);
     }
+    
+    return { success: true, message: `You moved toward ${target.name}` };
   }
   
   protected async handleMove(direction: string): Promise<{ success: boolean; message: string }> {
@@ -275,14 +313,31 @@ export abstract class BaseActor {
         break;
     }
     
-    // Use pathfinding system for smooth movement
+    // Check boundaries using BoundarySystem
     const gameManager = (globalThis as any).gameManager;
+    if (gameManager?.systemManager?.boundarySystem) {
+      if (!gameManager.systemManager.boundarySystem.isPositionValid(targetX, targetY)) {
+        return { success: false, message: `Cannot move ${direction} - would go off map or hit obstacle` };
+      }
+    } else {
+      // Fallback boundary check
+      const mapWidth = 2784; // 58 * 48
+      const mapHeight = 1824; // 38 * 48  
+      const margin = 48;
+      
+      if (targetX < margin || targetX > mapWidth - margin || 
+          targetY < margin || targetY > mapHeight - margin) {
+        return { success: false, message: `Cannot move ${direction} - would go off map` };
+      }
+    }
+    
+    // Use pathfinding system for smooth movement
     console.log(`[NPC_FLOW] ${this.name}: GameManager available:`, !!gameManager);
     console.log(`[NPC_FLOW] ${this.name}: PathfindingSystem available:`, !!gameManager?.pathfindingSystem);
     
     if (gameManager && gameManager.pathfindingSystem) {
       console.log(`[NPC_FLOW] ${this.name}: Using smooth movement to (${targetX}, ${targetY})`);
-      this.moveToPosition(targetX, targetY);
+      await this.moveToPosition(targetX, targetY);
     } else {
       // Fallback to direct position update
       console.log(`[NPC_FLOW] ${this.name}: Using fallback teleport to (${targetX}, ${targetY})`);
@@ -290,12 +345,12 @@ export abstract class BaseActor {
     }
     
     console.log(`[NPC_FLOW] ${this.name}: Moved ${direction} to (${targetX}, ${targetY})`);
-    return { success: true, message: `${this.name} moved ${direction}` };
+    return { success: true, message: `You moved ${direction}` };
   }
   
   // Abstract method for setting position (implemented by subclasses)
   protected abstract setPosition(x: number, y: number): void;
-  protected abstract moveToPosition(x: number, y: number): void;
+  protected abstract moveToPosition(x: number, y: number): Promise<void>;
   
   protected async handleSpeak(message: string): Promise<{ success: boolean; message: string }> {
     // Validate message is not empty
@@ -327,13 +382,93 @@ export abstract class BaseActor {
         hearingRange: 150, // NPCs within 150px can hear
         sceneKey: sceneKey // Add scene isolation
       }, 'SpeechSystem');
+
+      // Calculate who heard this message
+      const hearingRange = 150;
+      const listeners = [];
+      
+      // Check if player heard it
+      const player = gameManager.entityManager.getPlayer();
+      if (player) {
+        const playerPos = player.getPosition();
+        const playerDistance = Phaser.Math.Distance.Between(myPos.x, myPos.y, playerPos.x, playerPos.y);
+        if (playerDistance <= hearingRange) {
+          listeners.push(`Player (${Math.round(playerDistance)}px away)`);
+        }
+      }
+      
+      // Check nearby NPCs
+      const nearbyNPCs = gameManager.proximitySystem.getNearbyNPCs();
+      nearbyNPCs.forEach(npc => {
+        if (npc.id !== this.id) {
+          const npcPos = npc.getPosition();
+          const npcDistance = Phaser.Math.Distance.Between(myPos.x, myPos.y, npcPos.x, npcPos.y);
+          if (npcDistance <= hearingRange) {
+            listeners.push(`${npc.name} (${Math.round(npcDistance)}px away)`);
+          }
+        }
+      });
+      
+      const hearersReport = listeners.length > 0 
+        ? `Heard by: ${listeners.join(', ')}` 
+        : 'No one was close enough to hear';
+        
+      return { success: true, message: `You said: "${message}" - ${hearersReport}` };
     }
     
-    return { success: true, message: `${this.name} said: "${message}"` };
+    return { success: true, message: `You said: "${message}"` };
   }
 
   protected async handleTakeBreak(reason: string): Promise<{ success: boolean; message: string }> {
     console.log(`[NPC_FLOW] ${this.name}: Taking a break - ${reason || 'no reason given'}`);
-    return { success: true, message: `${this.name} decided to take a break: ${reason || 'resting'}` };
+    return { success: true, message: `You decided to take a break: ${reason || 'resting'}` };
+  }
+
+  protected async handleGive(itemId: string, targetId: string): Promise<{ success: boolean; message: string }> {
+    const inventory = InventorySystem.getInstance();
+    
+    // Check if we have the item
+    if (!inventory.hasItem(this.id, itemId)) {
+      return { success: false, message: `Don't have item ${itemId}` };
+    }
+
+    // Check if target exists and is nearby
+    const targets = this.getVisibleTargets();
+    const target = targets.find(t => t.id === targetId);
+    if (!target) {
+      return { success: false, message: `Target ${targetId} not found nearby` };
+    }
+
+    // Transfer the item
+    const success = inventory.transferItem(this.id, targetId, itemId);
+    if (success) {
+      const item = inventory.getInventory(targetId).find(i => i.id === itemId);
+      
+      // Emit event for UI updates if transferring to player
+      if (targetId === 'player') {
+        const gameManager = (globalThis as any).gameManager;
+        if (gameManager && gameManager.eventBus) {
+          gameManager.eventBus.emit('player-inventory-updated', {
+            action: 'received',
+            item: item,
+            from: this.name
+          });
+        }
+      }
+      
+      return { success: true, message: `You gave ${item?.name || itemId} to ${target.name}` };
+    }
+
+    return { success: false, message: `Failed to give ${itemId}` };
+  }
+
+  protected async handleCheckInventory(): Promise<{ success: boolean; message: string }> {
+    const inventory = InventorySystem.getInstance().getInventory(this.id);
+    if (inventory.length === 0) {
+      return { success: true, message: "Not carrying any items" };
+    }
+
+    const itemList = inventory.map(item => item.name).join(', ');
+    return { success: true, message: `You are carrying: ${itemList}` };
   }
 }

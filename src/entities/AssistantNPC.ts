@@ -4,6 +4,19 @@ import { PersistentNPC } from './PersistentNPC';
  * Assistant NPC - Helpful companion for investigation and note-taking
  */
 export class AssistantNPC extends PersistentNPC {
+  private static instance: AssistantNPC | null = null;
+
+  public static getInstance(scene: Phaser.Scene, config: any): AssistantNPC {
+    if (!AssistantNPC.instance) {
+      AssistantNPC.instance = new AssistantNPC(scene, config);
+    }
+    return AssistantNPC.instance;
+  }
+
+  private constructor(scene: Phaser.Scene, config: any) {
+    super(scene, { ...config, id: 'Assistant' });
+  }
+
   protected buildSystemPrompt(): string {
     const basePrompt = super.buildSystemPrompt();
     

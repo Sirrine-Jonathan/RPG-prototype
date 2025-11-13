@@ -23,13 +23,13 @@ export class EntityManager {
       throw new Error("Player already exists");
     }
     this.player = new PersistentPlayer(scene, x, y);
-    
+
     // Register player with proximity system so NPCs can interact with it
     const gameManager = (globalThis as any).gameManager;
     if (gameManager && gameManager.proximitySystem) {
       gameManager.proximitySystem.addObject(this.player);
     }
-    
+
     return this.player;
   }
 
@@ -48,9 +48,9 @@ export class EntityManager {
       npc = HistorianNPC.getInstance(scene, config);
     } else if (id === "scholar_marcus") {
       npc = ScholarNPC.getInstance(scene, config);
-    } else if (id === "margaret_chen") {
+    } else if (id === "grace") {
       npc = CouncilLeaderNPC.getInstance(scene, config);
-    } else if (id === "assistant") {
+    } else if (id === "charlie") {
       npc = AssistantNPC.getInstance(scene, config);
     } else {
       throw new Error(
@@ -70,22 +70,6 @@ export class EntityManager {
     }
 
     return npc;
-  }
-
-  private getTargetNPCId(lookupKey: string): string {
-    // Map lookup keys to actual NPC IDs
-    switch (lookupKey) {
-      case "margaret_chen":
-        return "Margaret Chen";
-      case "assistant":
-        return "Assistant";
-      case "historian_vera":
-        return "Historian Vera";
-      case "scholar_marcus":
-        return "Scholar Marcus";
-      default:
-        return lookupKey;
-    }
   }
 
   public addNPC(npc: PersistentNPC): void {

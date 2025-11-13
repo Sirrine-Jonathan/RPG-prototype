@@ -4,7 +4,7 @@ import { Logger, LogTag } from "../utils/Logger";
 import { Tool } from "./BaseActor";
 
 /**
- * Margaret Chen - Town Council Leader who hired the detective
+ * Grace Sirrine - Town Council Leader who hired the detective
  */
 export class CouncilLeaderNPC extends PersistentNPC {
   private static instance: CouncilLeaderNPC | null = null;
@@ -17,12 +17,12 @@ export class CouncilLeaderNPC extends PersistentNPC {
   }
 
   private constructor(scene: any, config: any) {
-    super(scene, { ...config, id: 'Margaret Chen' });
+    super(scene, { ...config, id: "Grace Sirrine" });
 
     const logger = Logger.getInstance();
     logger.npcBehavior(
       config.name,
-      `Margaret Chen (Guide) created with Maya's photo in inventory`
+      `Grace Sirrine (Guide) created with Maya's photo in inventory`
     );
 
     // Give Margaret the photo immediately when created
@@ -49,7 +49,7 @@ export class CouncilLeaderNPC extends PersistentNPC {
       logger.npcBehavior(config.name, `Starting immediate approach to player`);
       this.triggerEvent("initial_approach", {
         target: "player",
-        reason: "first_meeting_with_hired_detective"
+        reason: "first_meeting_with_hired_detective",
       });
     }, 1000); // Small delay to let scene settle
   }
@@ -82,12 +82,12 @@ export class CouncilLeaderNPC extends PersistentNPC {
   private getCurrentInstruction(): string {
     const inventory = InventorySystem.getInstance();
     const hasPhoto = inventory.hasItem(this.id, "Maya's Photo");
-    
+
     // Check if Detective Riley is within interaction range
     const gameManager = (globalThis as any).gameManager;
     const player = gameManager?.entityManager?.getPlayer();
     let isDetectiveNearby = false;
-    
+
     if (player) {
       const playerPos = player.getPosition();
       const myPos = this.getPosition();
@@ -96,7 +96,7 @@ export class CouncilLeaderNPC extends PersistentNPC {
       );
       isDetectiveNearby = distance <= 48; // Interaction range
     }
-    
+
     if (!isDetectiveNearby) {
       return "You must immediately move toward the detective to begin your first meeting.";
     } else if (hasPhoto) {
@@ -112,11 +112,11 @@ export class CouncilLeaderNPC extends PersistentNPC {
 
     return `${basePrompt}
 
-ROLE: You are Margaret Chen, Head of the City Council who hired Detective Riley to investigate Maya's disappearance.
+ROLE: You are Grace Sirrine, Head of the City Council who hired Detective Riley to investigate Maya's disappearance.
 
 PERSONALITY: Authoritative but concerned, professional, takes charge of situations.
 
-BACKGROUND: You hired the player over the phone to investigate Maya's disappearance. This is your first in-person meeting.
+BACKGROUND: You hired Detective Riley (the player) over the phone to investigate Maya's disappearance. This is your first in-person meeting. The player you are talking to IS Detective Riley.
 
 CURRENT OBJECTIVE: ${currentInstruction}
 

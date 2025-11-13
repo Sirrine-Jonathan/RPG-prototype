@@ -215,6 +215,13 @@ export class QuickSpeechUI {
             timestamp: Date.now()
         });
 
+        // Notify ChatInterface to record this message in history
+        eventBus.emit('player_message_sent', {
+            speaker: "Player",
+            message: message,
+            timestamp: Date.now()
+        });
+
         // Show speech bubble over player
         this.showPlayerSpeechBubble(message, playerPos);
 

@@ -1,8 +1,8 @@
 import { Scene } from "phaser";
-import { SmartNPC } from "../entities/SmartNPC";
 import { AIService } from "../services/AIService";
 import { EventBus } from "../systems/EventBus";
 import { InventorySystem } from "../systems/InventorySystem";
+import { Logger } from "../utils/Logger";
 
 interface TownMessage {
   type: "speech" | "action" | "note";
@@ -69,6 +69,10 @@ export class ChatInterface {
       );
       gameManager.eventBus.subscribe("player-inventory-updated", (event: any) =>
         this.updateInventoryArea()
+      );
+      // Listen for messages from QuickSpeechUI
+      gameManager.eventBus.subscribe("player_message_sent", (event: any) =>
+        this.onPlayerMessageSent(event.data)
       );
     }
 
@@ -461,6 +465,7 @@ export class ChatInterface {
     });
 
     console.log(`📨 CONVO Player speaks: "${message}"`);
+    Logger.getInstance().playerSpeech("Player", message);
 
     // Show player speech bubble
     this.showPlayerSpeechBubble(message);
@@ -517,6 +522,30 @@ export class ChatInterface {
       timestamp: Date.now(),
     });
 
+    // Only log as player speech if it's actually the player
+    if (data.speaker === "Player") {
+      Logger.getInstance().playerSpeech(data.speaker, data.message);
+    }
+    this.updateTownChat();
+  };
+
+  private onPlayerMessageSent = (data: {
+    speaker: string;
+    message: string;
+    timestamp: number;
+  }) => {
+    // Add message from QuickSpeechUI to chat history
+    this.townMessages.push({
+      type: "speech",
+      speaker: data.speaker,
+      content: data.message,
+      timestamp: data.timestamp,
+    });
+
+    // Only log as player speech if it's actually the player
+    if (data.speaker === "Player") {
+      Logger.getInstance().playerSpeech(data.speaker, data.message);
+    }
     this.updateTownChat();
   };
 
@@ -533,30 +562,8 @@ export class ChatInterface {
     this.updateNotesArea();
   };
 
-  private onTownSpeech = (data: {
-    speaker: string;
-    speakerId: string;
-    message: string;
-    position: { x: number; y: number };
-    timestamp: number;
-  }) => {
-    // Don't add player messages twice
-    if (data.speakerId === "player") return;
-
-    this.townMessages.push({
-      type: "speech",
-      speaker: data.speaker,
-      content: data.message,
-      timestamp: data.timestamp,
-    });
-
-    this.updateTownChat();
-  };
-
   private updateNotesTab() {
-    if (this.currentTab === "notes") {
-      this.updateNotesArea();
-    }
+    this.updateNotesArea();
   }
 
   private onNotesUpdate = (
@@ -706,137 +713,7 @@ export class ChatInterface {
     }
   }
 
-  private findNPCById(npcId: string): SmartNPC | null {
-    console.log(`🔍 Looking for NPC with id: "${npcId}"`);
-
-    // Check current scene for the NPC - get the ACTIVE scene, not the scene that created ChatInterface
-    const sceneManager = this.scene.scene.manager;
-    const activeSceneKey = sceneManager.getScenes(true)[0]?.scene?.key; // Get the first active scene
-    const currentScene = activeSceneKey
-      ? sceneManager.getScene(activeSceneKey)
-      : this.scene;
-
-    console.log(`🎬 ChatInterface created in: ${this.scene.scene.key}`);
-    console.log(`🎬 Current active scene: ${activeSceneKey || "unknown"}`);
-
-    if (currentScene) {
-      // Try different ways to access NPCs
-      let npcs: SmartNPC[] = [];
-
-      if ((currentScene as any).npcs) {
-        npcs = (currentScene as any).npcs as SmartNPC[];
-        console.log(
-          `📋 Found NPCs via .npcs property:`,
-          npcs.map((npc) => `${npc.name} (id: "${npc.id}")`)
-        );
-      } else if ((currentScene as any).npc) {
-        // Single NPC (TownScene style)
-        npcs = [(currentScene as any).npc as SmartNPC];
-        console.log(
-          `📋 Found single NPC via .npc property:`,
-          npcs.map((npc) => `${npc.name} (id: "${npc.id}")`)
-        );
-      } else {
-        // Look for any SmartNPC properties in the scene
-        const sceneProps = Object.keys(currentScene);
-        console.log(
-          `📋 Checking scene properties:`,
-          sceneProps.filter(
-            (key) =>
-              key.includes("npc") ||
-              key.includes("NPC") ||
-              key.toLowerCase().includes("sheriff") ||
-              key.toLowerCase().includes("townsperson")
-          )
-        );
-
-        for (const prop of sceneProps) {
-          const value = (currentScene as any)[prop];
-          if (
-            value &&
-            typeof value === "object" &&
-            value.constructor?.name === "SmartNPC"
-          ) {
-            npcs.push(value as SmartNPC);
-            console.log(
-              `📋 Found NPC via property "${prop}":`,
-              value.name,
-              `(id: "${value.id}")`
-            );
-          }
-        }
-      }
-
-      if (npcs.length > 0) {
-        // Try exact match first
-        let foundNPC = npcs.find((npc) => npc.id === npcId);
-
-        // If not found, try case-insensitive match
-        if (!foundNPC) {
-          foundNPC = npcs.find(
-            (npc) => npc.id.toLowerCase() === npcId.toLowerCase()
-          );
-          if (foundNPC)
-            console.log(
-              `🔍 Found via case-insensitive match: ${foundNPC.name}`
-            );
-        }
-
-        // If still not found, try partial match on name
-        if (!foundNPC) {
-          foundNPC = npcs.find((npc) =>
-            npc.name.toLowerCase().includes(npcId.toLowerCase())
-          );
-          if (foundNPC)
-            console.log(`🔍 Found via name match: ${foundNPC.name}`);
-        }
-
-        if (foundNPC) {
-          console.log(`✅ Found NPC: ${foundNPC.name} (id: ${foundNPC.id})`);
-          return foundNPC;
-        }
-      }
-    } else {
-      console.log(`📋 Could not access current scene`);
-    }
-
-    // Fallback for TownScene
-    if ((this.scene as any).npc?.id === npcId) {
-      return (this.scene as any).npc;
-    }
-
-    console.log(`❌ Could not find NPC with id: "${npcId}"`);
-    return null;
-  }
-
-  updateNearbyNPCs(npcs: SmartNPC[]) {
-    const newNearbyIds = new Set(npcs.map((npc) => npc.id));
-
-    // Only update if the nearby NPCs have actually changed
-    const currentNearbyIds = new Set(this.nearbyNPCs);
-    if (this.setsEqual(newNearbyIds, currentNearbyIds)) {
-      return; // No change, don't update
-    }
-
-    console.log(
-      "Updating nearby NPCs:",
-      npcs.map((n) => `${n.name} (id: ${n.id})`)
-    );
-    this.nearbyNPCs.clear();
-    npcs.forEach((npc) => {
-      this.nearbyNPCs.add(npc.id);
-    });
-  }
-
-  private setsEqual(a: Set<string>, b: Set<string>): boolean {
-    return a.size === b.size && [...a].every((x) => b.has(x));
-  }
-
   public toggleMinimize() {
-    console.log(
-      "🎯 ChatInterface: toggleMinimize called, current state:",
-      this.isMinimized
-    );
     this.isMinimized = !this.isMinimized;
 
     if (this.isMinimized) {
@@ -850,13 +727,6 @@ export class ChatInterface {
       this.switchTab(this.activeTab);
       this.minimizeButton.textContent = "−";
     }
-
-    console.log(
-      "🎯 ChatInterface: New state:",
-      this.isMinimized,
-      "Container display:",
-      this.container.style.display
-    );
   }
 
   private switchTab(tab: "chat" | "inventory" | "notes") {
@@ -894,7 +764,7 @@ export class ChatInterface {
     const inventorySystem = InventorySystem.getInstance();
     // Use the actual player ID from PersistentPlayer
     const gameManager = (globalThis as any).gameManager;
-    const playerId = gameManager?.persistentPlayer?.id || 'Detective Riley';
+    const playerId = gameManager?.persistentPlayer?.id || "Detective Riley";
     const playerInventory = inventorySystem.getInventory(playerId);
 
     if (playerInventory.length === 0) {
@@ -906,7 +776,7 @@ export class ChatInterface {
       return;
     }
 
-    playerInventory.forEach(item => {
+    playerInventory.forEach((item) => {
       const itemDiv = document.createElement("div");
       itemDiv.style.cssText = `
         padding: 12px;
@@ -927,7 +797,8 @@ export class ChatInterface {
 
       if (item.category) {
         const categoryDiv = document.createElement("div");
-        categoryDiv.style.cssText = "font-size: 10px; color: #888; margin-top: 4px;";
+        categoryDiv.style.cssText =
+          "font-size: 10px; color: #888; margin-top: 4px;";
         categoryDiv.textContent = `Category: ${item.category}`;
         itemDiv.appendChild(categoryDiv);
       }

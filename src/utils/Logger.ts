@@ -4,6 +4,9 @@ export enum LogTag {
   INVENTORY = "Inventory",
   CONVERSATION = "Conversation",
   TOOLS = "Tools",
+  PLAYER_SPEECH = "PlayerSpeech",
+  NPC_EVENTS_RAW = "NPCEventsRaw",
+  NPC_EVENTS_PROCESSED = "NPCEventsProcessed",
 
   // AI System
   AI_PROMPT = "AI][Prompt",
@@ -201,6 +204,18 @@ export class Logger {
 
   inventory(entity: string, message: string, data?: any): void {
     this.log(LogTag.INVENTORY, message, entity, data);
+  }
+
+  playerSpeech(speaker: string, message: string, data?: any): void {
+    this.log(LogTag.PLAYER_SPEECH, `${speaker}: ${message}`, speaker, data);
+  }
+
+  npcEventRaw(entity: string, eventType: string, source: string, data?: any): void {
+    this.log(LogTag.NPC_EVENTS_RAW, `Raw event: ${eventType} from ${source}`, entity, data);
+  }
+
+  npcEventProcessed(entity: string, eventType: string, data?: any): void {
+    this.log(LogTag.NPC_EVENTS_PROCESSED, `Processing event: ${eventType}`, entity, data);
   }
 
   error(message: string, entity?: string, data?: any): void {

@@ -108,49 +108,45 @@ export class NewTownScene extends NewGameplayScene {
   }
 
   protected createSceneNPCs(): void {
-    // Create Margaret Chen as the Guide NPC who hired the player
-    const margaret = this.gameManager.entityManager.createNPC(
-      "margaret_chen",
+    // Create Grace Sirrine as the Guide NPC who hired the player
+    const margaret = this.gameManager.entityManager.createNPC("grace", this, {
+      name: "Grace Sirrine",
+      spriteKey: "alex",
+      x: 795,
+      y: 880,
+      personality: "Authoritative town leader who hired the detective",
+      background:
+        "Head of City Council who hired Detective Riley to investigate Maya's disappearance. This is your first in-person meeting. Charlie Sirrine is your little brother. You asked Charlie to be an assistant to the detective you hired and to take notes for him.",
+      role: "guide",
+    });
+
+    // Create Assistant NPC using entityManager
+    const assistant = this.gameManager.entityManager.createNPC(
+      "charlie",
       this,
       {
-        name: "Margaret Chen",
+        name: "Charlie Sirrine",
         spriteKey: "alex",
-        x: 795,
-        y: 880,
-        personality: "Authoritative town leader who hired the detective",
-        background:
-          "Head of City Council who hired Detective Riley to investigate Maya's disappearance. This is your first in-person meeting.",
-        role: "guide",
+        x: 200,
+        y: 200,
+        personality: "Helpful and observant",
+        background: "Grace Sirrine is your older sister. She asked you to be an assistant to the detective she hired and to take notes for him.",
+        goals: [
+          "Help the player with their investigation",
+          "Take notes of important observations",
+        ],
       }
     );
 
-    // Create Assistant NPC using entityManager
-    // const assistant = this.gameManager.entityManager.createNPC(
-    //   "assistant",
-    //   this,
-    //   {
-    //     name: "Assistant",
-    //     spriteKey: "alex",
-    //     x: 200,
-    //     y: 200,
-    //     personality: "Helpful and observant",
-    //     background: "AI assistant dedicated to helping solve mysteries",
-    //     goals: [
-    //       "Help the player with their investigation",
-    //       "Take notes of important observations",
-    //     ],
-    //   }
-    // );
-
     this.gameManager.entityManager.addNPCToScene(margaret.id, this.scene.key);
-    // this.gameManager.entityManager.addNPCToScene(assistant.id, this.scene.key);
+    this.gameManager.entityManager.addNPCToScene(assistant.id, this.scene.key);
 
     // Initialize ChatInterface for inventory and communication
     ChatInterface.getInstance(this);
 
-    // console.log(
-    //   `🏘️ NewTownScene: Created ${margaret.id} and ${assistant.id} NPCs`
-    // );
+    console.log(
+      `🏘️ NewTownScene: Created ${margaret.id} and ${assistant.id} NPCs`
+    );
   }
 
   private setupAutoSave(): void {
@@ -160,7 +156,9 @@ export class NewTownScene extends NewGameplayScene {
     // Check periodically if player has Maya's photo (simple approach)
     const checkForPhoto = () => {
       const playerInventory = inventorySystem.getInventory("player");
-      const hasPhoto = playerInventory.some((item) => item.id === "Maya's Photo");
+      const hasPhoto = playerInventory.some(
+        (item) => item.id === "Maya's Photo"
+      );
 
       if (hasPhoto) {
         console.log("🏘️ Player received Maya's photo, auto-saving...");

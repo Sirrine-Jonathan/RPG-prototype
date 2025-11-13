@@ -1,12 +1,12 @@
 import { Scene } from "phaser";
 import { BaseScene } from "./BaseScene";
-import { SmartNPC } from "../entities/SmartNPC";
+import { PersistentNPC } from "../entities/PersistentNPC";
 import { InteractiveObject } from "../entities/InteractiveObject";
-import { NPCTool } from "../services/AIService";
+import { Tool } from "../entities/BaseActor";
 
 export class PoliceStationScene extends BaseScene {
-  private sheriff?: SmartNPC;
-  private deputy?: SmartNPC;
+  private sheriff?: PersistentNPC;
+  private deputy?: PersistentNPC;
   private evidenceLocker?: InteractiveObject;
 
   constructor() {
@@ -20,51 +20,29 @@ export class PoliceStationScene extends BaseScene {
     this.loadLevel("police_station");
 
     // Create Sheriff Martinez
-    this.sheriff = new SmartNPC(
-      this,
-      300, 200,
-      "alex", // Using existing sprite
-      "Sheriff Martinez",
-      "Protective, secretive, authority figure",
-      "The town sheriff who has been hiding evidence related to the mysterious disappearances. Member of the secret society.",
-      "law_enforcement"
-    );
+    this.sheriff = new PersistentNPC(this, {
+      id: "sheriff_martinez",
+      name: "Sheriff Martinez",
+      x: 300,
+      y: 200,
+      spriteKey: "alex",
+      personality: "Protective, secretive, authority figure",
+      background: "The town sheriff who has been hiding evidence related to the mysterious disappearances. Member of the secret society."
+    });
 
     // Create Deputy Collins  
-    this.deputy = new SmartNPC(
-      this,
-      400, 250,
-      "amelia", // Using existing sprite
-      "Deputy Collins",
-      "Helpful but constrained, wants to do the right thing",
-      "A deputy who suspects something is wrong but is constrained by the sheriff. Potential ally to the player.",
-      "law_enforcement"
-    );
+    this.deputy = new PersistentNPC(this, {
+      id: "deputy_collins",
+      name: "Deputy Collins",
+      x: 400,
+      y: 250,
+      spriteKey: "amelia",
+      personality: "Helpful but constrained, wants to do the right thing",
+      background: "A deputy who suspects something is wrong but is constrained by the sheriff. Potential ally to the player."
+    });
 
     // Create Evidence Locker (interactive object)
     this.evidenceLocker = new EvidenceLocker(this, 200, 150, "evidence_locker");
-
-    // Set up room context for NPCs
-    const objects = [this.evidenceLocker];
-    const characters = [this.sheriff, this.deputy];
-    
-    this.sheriff.setRoomContext(objects, characters, []);
-    this.deputy.setRoomContext(objects, characters, []);
-
-    // Set story-specific goals
-    this.sheriff.setGoals([
-      "Maintain control over the investigation",
-      "Hide evidence that could expose the secret society", 
-      "Deflect suspicion from myself and other society members",
-      "Keep the deputy from discovering too much"
-    ]);
-
-    this.deputy.setGoals([
-      "Help solve the mystery of the disappearances",
-      "Gather evidence despite the sheriff's interference",
-      "Assist the player when possible",
-      "Uncover what the sheriff is hiding"
-    ]);
 
     console.log("Police Station scene created with Sheriff Martinez and Deputy Collins");
   }
@@ -89,24 +67,27 @@ class EvidenceLocker extends InteractiveObject {
     super(scene, x, y, id, "Evidence Locker", 0x666666);
   }
 
-  getOfferedTools(): NPCTool[] {
-    const tools: NPCTool[] = [];
+  getOfferedTools(): Tool[] {
+    const tools: Tool[] = [];
 
     if (this.isLocked) {
       tools.push({
         name: "examine_locker",
-        description: "Examine the locked evidence locker"
+        description: "Examine the locked evidence locker",
+        handler: async () => this.handleInteraction("examine_locker")
       });
     } else {
       tools.push({
         name: "search_locker", 
-        description: "Search through the evidence locker"
+        description: "Search through the evidence locker",
+        handler: async () => this.handleInteraction("search_locker")
       });
 
       if (this.hasEvidence) {
         tools.push({
           name: "hide_evidence",
-          description: "Hide evidence in the locker (Sheriff only)"
+          description: "Hide evidence in the locker (Sheriff only)",
+          handler: async () => this.handleInteraction("hide_evidence")
         });
       }
     }

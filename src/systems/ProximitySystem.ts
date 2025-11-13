@@ -1,5 +1,6 @@
 import { PersistentNPC } from "../entities/PersistentNPC";
 import { EventBus } from "./EventBus";
+import { Logger } from "../utils/Logger";
 
 interface ProximityObject {
   id: string;
@@ -163,9 +164,26 @@ export class ProximitySystem {
         npcPos.y
       );
 
-      // If NPC is within hearing range, notify them of player speech
-      if (distance <= 300) {
-        // Same hearing range as NPC speech
+      // Log raw event before any filtering
+      Logger.getInstance().npcEventRaw(npc.name, "player_speech", "ProximitySystem", {
+        message: data.message,
+        distance: distance,
+        withinRange: distance <= 300
+      });
+
+      // If NPC is within hearing range, notify them of player speech for context
+      if (distance <= 200) {
+        // NPCs can hear player speech for context (extended hearing range)
+        npc.triggerEvent("npc_speech_heard", {
+          speakerName: "Detective Riley",
+          message: data.message,
+          distance: distance,
+        });
+      }
+
+      // If NPC is within interaction range, they can respond to player speech
+      if (distance <= 48) {
+        // NPCs can only respond when close enough to naturally join conversation
         npc.triggerEvent("player_speech", {
           message: data.message,
           distance: distance,

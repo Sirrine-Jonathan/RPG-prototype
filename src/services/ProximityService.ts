@@ -1,22 +1,24 @@
-import { SmartNPC } from '../entities/SmartNPC';
+import { PersistentNPC } from '../entities/PersistentNPC';
+import { Logger } from '../utils/Logger';
 
 export class ProximityService {
-    private npcs: SmartNPC[] = [];
+    private npcs: PersistentNPC[] = [];
     private playerX: number = 0;
     private playerY: number = 0;
     private range: number = 96; // 2 tiles at 48px per tile
     private scene: Phaser.Scene;
     private proximityStates: Map<string, boolean> = new Map();
+    private logger = Logger.getInstance();
 
     constructor(scene: Phaser.Scene) {
         this.scene = scene;
     }
 
-    addNPC(npc: SmartNPC) {
+    addNPC(npc: PersistentNPC) {
         this.npcs.push(npc);
     }
 
-    removeNPC(npc: SmartNPC) {
+    removeNPC(npc: PersistentNPC) {
         const index = this.npcs.indexOf(npc);
         if (index > -1) {
             this.npcs.splice(index, 1);
@@ -56,8 +58,8 @@ export class ProximityService {
         });
     }
 
-    getNearbyNPCs(): SmartNPC[] {
-        const nearby: SmartNPC[] = [];
+    getNearbyNPCs(): PersistentNPC[] {
+        const nearby: PersistentNPC[] = [];
 
         for (const npc of this.npcs) {
             const distance = Phaser.Math.Distance.Between(
@@ -73,9 +75,9 @@ export class ProximityService {
         return nearby;
     }
 
-    getNearbyCharacters(x: number, y: number, range?: number): SmartNPC[] {
+    getNearbyCharacters(x: number, y: number, range?: number): PersistentNPC[] {
         const checkRange = range || this.range;
-        const nearby: SmartNPC[] = [];
+        const nearby: PersistentNPC[] = [];
 
         for (const npc of this.npcs) {
             const distance = Phaser.Math.Distance.Between(
@@ -91,11 +93,11 @@ export class ProximityService {
         return nearby;
     }
 
-    getNearestNPC(): SmartNPC | null {
+    getNearestNPC(): PersistentNPC | null {
         const nearby = this.getNearbyNPCs();
         if (nearby.length === 0) return null;
 
-        let nearest: SmartNPC | null = null;
+        let nearest: PersistentNPC | null = null;
         let shortestDistance = Infinity;
 
         for (const npc of nearby) {
@@ -121,7 +123,7 @@ export class ProximityService {
         return this.range;
     }
 
-    getAllNPCs(): SmartNPC[] {
+    getAllNPCs(): PersistentNPC[] {
         return this.npcs;
     }
 }

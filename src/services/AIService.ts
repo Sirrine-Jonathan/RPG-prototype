@@ -19,14 +19,39 @@ export class AIService {
         .find((m) => m.role === "system")
         ?.content?.match(/You are (\w+)/)?.[1] || "Unknown";
 
-    // Log request
+    // Log raw request
     this.logger.debug(
       LogTag.LLM_INTERFACE,
-      `REQUEST: ${npcName}\n\nMessages:\n\n${JSON.stringify(
+      `REQUEST [RAW]: ${npcName}\n\nMessages:\n\n${JSON.stringify(
         messages,
         null,
         2
       )}\n\nTools:\n\n${JSON.stringify(tools, null, 2)}`,
+      npcName
+    );
+
+    // Log simplified request
+    const simplifiedMessages = messages
+      .filter((msg) => msg.role !== "system")
+      .map((msg) => {
+        if (msg.role === "tool") {
+          return `tool: ${msg.content}`;
+        } else if (msg.tool_calls && msg.tool_calls.length > 0) {
+          return `assistant: ${msg.tool_calls
+            .map((tc) => tc.function.name)
+            .join(", ")}`;
+        } else {
+          return `${msg.role}: ${msg.content || "(no content)"}`;
+        }
+      })
+      .join("\n");
+
+    const simplifiedTools = tools.map((tool) => tool.function.name).join(", ");
+
+    this.logger.debug(
+      LogTag.LLM_INTERFACE,
+      // `REQUEST [SIMPLIFIED]: ${npcName}\n\nMessages:\n${simplifiedMessages}\n\nTools:\n${simplifiedTools}`,
+      `REQUEST [SIMPLIFIED]: ${npcName}\n\nMessages:\n${simplifiedMessages}`,
       npcName
     );
 
@@ -84,17 +109,24 @@ export class AIService {
         body: JSON.stringify(requestBody),
       });
 
-      console.log(`[LLM_DEBUG] ${npcName}: Fetch response status: ${response.status}`);
+      console.log(
+        `[LLM_DEBUG] ${npcName}: Fetch response status: ${response.status}`
+      );
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`[LLM_DEBUG] ${npcName}: Response error text:`, errorText);
+        console.error(
+          `[LLM_DEBUG] ${npcName}: Response error text:`,
+          errorText
+        );
         this.logger.error(
           LogTag.LLM_INTERFACE,
           `Response HTTP ${response.status}: ${errorText}`,
           npcName
         );
-        throw new Error(`[${LogTag.LLM_INTERFACE}] HTTP ${response.status}: ${errorText}`);
+        throw new Error(
+          `[${LogTag.LLM_INTERFACE}] HTTP ${response.status}: ${errorText}`
+        );
       }
 
       console.log(`[LLM_DEBUG] ${npcName}: Parsing JSON response...`);
@@ -123,18 +155,22 @@ export class AIService {
             if (parsed.name && parsed.parameters) {
               this.logger.debug(
                 LogTag.LLM_INTERFACE,
-                `RESPONSE: ${parsed.name}(${JSON.stringify(parsed.parameters)})`,
+                `RESPONSE: ${parsed.name}(${JSON.stringify(
+                  parsed.parameters
+                )})`,
                 npcName
               );
-              
+
               // Convert to OpenAI format for consistent handling
-              data.message.tool_calls = [{
-                id: `call_${Date.now()}`,
-                function: {
-                  name: parsed.name,
-                  arguments: parsed.parameters
-                }
-              }];
+              data.message.tool_calls = [
+                {
+                  id: `call_${Date.now()}`,
+                  function: {
+                    name: parsed.name,
+                    arguments: parsed.parameters,
+                  },
+                },
+              ];
             }
           } catch (e) {
             this.logger.debug(
@@ -155,7 +191,10 @@ export class AIService {
           `[${LogTag.LLM_INTERFACE}] RESPONSE: No tool call received`,
           npcName
         );
-        console.log(`[LLM_DEBUG] ${npcName}: Full response data:`, JSON.stringify(data, null, 2));
+        console.log(
+          `[LLM_DEBUG] ${npcName}: Full response data:`,
+          JSON.stringify(data, null, 2)
+        );
       }
 
       return data.message;

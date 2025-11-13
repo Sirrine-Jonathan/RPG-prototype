@@ -1,5 +1,6 @@
-import { AIService, NPCContext } from "../services/AIService";
+import { AIService } from "../services/AIService";
 import { SpeechBubble } from "../ui/SpeechBubble";
+import { ActionBubble } from "../ui/ActionBubble";
 import { BaseActor, Tool } from "./BaseActor";
 import { EventBus } from "../systems/EventBus";
 import { Logger, LogTag } from "../utils/Logger";
@@ -9,7 +10,7 @@ export class PersistentNPC extends BaseActor {
   public name: string;
   public personality: string;
   public background: string;
-  private sprite: Phaser.GameObjects.Sprite | null = null;
+  public sprite: Phaser.GameObjects.Sprite | null = null;
   private nameText: Phaser.GameObjects.Text | null = null;
   private currentScene: Phaser.Scene | null = null;
   private position: { x: number; y: number };
@@ -19,10 +20,13 @@ export class PersistentNPC extends BaseActor {
   // AI and behavior
   private aiService: AIService;
   private speechBubble: SpeechBubble | null = null;
+  private actionBubble: ActionBubble | null = null;
   private timeoutHandle?: Phaser.Time.TimerEvent;
   private lastEventTime: number = 0;
   private pendingLLMRequest?: Promise<any>;
-  private conversationHistory: any[] = [];
+  private shouldInterruptLoop: boolean = false; // Flag to interrupt current loop
+  private conversationHistory: any[] = []; // Legacy - will be replaced
+  private messages: any[] = []; // New message-based context
   private logger = Logger.getInstance();
 
   // Following behavior
@@ -30,9 +34,15 @@ export class PersistentNPC extends BaseActor {
   protected followDistance: number = 96; // 2 tiles
   protected playerPosition: { x: number; y: number } = { x: 0, y: 0 };
   protected followTimer?: Phaser.Time.TimerEvent;
+  private currentMoveTween?: Phaser.Tweens.Tween;
 
   // Context strategy configuration
-  private readonly CONTEXT_STRATEGY: 'system_prompt' | 'conversation_history' | 'user_feedback' | 'hybrid' | 'full_context' = 'full_context';
+  private readonly CONTEXT_STRATEGY:
+    | "system_prompt"
+    | "conversation_history"
+    | "user_feedback"
+    | "hybrid"
+    | "full_context" = "full_context";
   private readonly MAX_CONTEXT_ACTIONS = 3;
   private readonly MIN_TIMEOUT = 15000; // 15 seconds minimum (normal)
   private readonly MAX_TIMEOUT = 30000; // 30 seconds maximum (normal)
@@ -41,6 +51,11 @@ export class PersistentNPC extends BaseActor {
 
   private isFirstTimeout: boolean = true;
 
+  /**
+   * Creates a new PersistentNPC with AI behavior, sprite, and event handling
+   * @param scene - Phaser scene to add the NPC to
+   * @param config - Configuration object with id, name, position, personality, etc.
+   */
   constructor(scene: Phaser.Scene, config: any) {
     super(); // Call BaseActor constructor
     this.id = config.id;
@@ -55,6 +70,9 @@ export class PersistentNPC extends BaseActor {
     this.setupEventListeners();
   }
 
+  /**
+   * Sets up event listeners for NPC speech events via EventBus
+   */
   private setupEventListeners(): void {
     const gameManager = (globalThis as any).gameManager;
     if (gameManager && gameManager.eventBus) {
@@ -62,9 +80,15 @@ export class PersistentNPC extends BaseActor {
       gameManager.eventBus.subscribe("npc_speech", (event: any) => {
         this.handleSpeechEvent(event.data);
       });
+      
+      // Note: player_speech events are handled by ProximitySystem calling triggerEvent
+      // No need to subscribe directly to avoid duplicate events
     }
   }
 
+  /**
+   * Handles speech events from other NPCs - validates scene and distance
+   */
   private handleSpeechEvent(speechData: any): void {
     // Don't react to our own speech
     if (speechData.speakerId === this.id) return;
@@ -102,6 +126,9 @@ export class PersistentNPC extends BaseActor {
     }
   }
 
+  /**
+   * Creates the visual sprite, name text, and UI components for the NPC
+   */
   private createSprite(scene: Phaser.Scene): void {
     this.currentScene = scene;
 
@@ -127,6 +154,7 @@ export class PersistentNPC extends BaseActor {
       .setAlpha(0.9);
 
     this.speechBubble = new SpeechBubble(scene);
+    this.actionBubble = new ActionBubble(scene);
 
     // Set up click interaction
     this.sprite.on("pointerdown", () => {
@@ -137,6 +165,9 @@ export class PersistentNPC extends BaseActor {
     });
   }
 
+  /**
+   * Initializes AI behavior system and starts random timeout cycle
+   */
   private setupBehavior(): void {
     if (!this.currentScene) return;
 
@@ -153,6 +184,9 @@ export class PersistentNPC extends BaseActor {
     this.startRandomTimeout();
   }
 
+  /**
+   * Starts a random timeout for autonomous AI behavior (shorter for first action)
+   */
   private startRandomTimeout(): void {
     // Clear existing timeout
     if (this.timeoutHandle) {
@@ -261,10 +295,49 @@ export class PersistentNPC extends BaseActor {
     }
   }
 
+  /**
+   * Main AI decision-making method - processes events and executes tool chains
+   */
   private async handleEvent(eventType: string, eventData: any): Promise<void> {
     this.logger.npcBehavior(this.name, `Handling event "${eventType}"`);
 
-    let chosenAction: string;
+    let chosenAction: string = "none";
+
+    // ALWAYS add event message to conversation history
+    let contextDescription = "";
+    if (eventType === "player_nearby") {
+      contextDescription = `Detective Riley approached you (${Math.round(eventData.distance)}px away).`;
+    } else if (eventType === "player_left") {
+      contextDescription = `Detective Riley moved away from you (${Math.round(eventData.distance)}px away).`;
+    } else if (eventType === "player_speech") {
+      contextDescription = `Detective Riley just said: "${eventData.message}" (${Math.round(eventData.distance)}px away). Respond appropriately to what they said.`;
+    } else if (eventType === "npc_speech_heard") {
+      contextDescription = `${eventData.speakerName} said: "${eventData.message}" (${Math.round(eventData.distance)}px away). React appropriately.`;
+    } else if (eventType === "timeout_prompt") {
+      contextDescription = `You haven't done anything for a while. Choose an action that fits your character.`;
+    } else if (eventType === "initial_approach") {
+      contextDescription = `You just arrived in town and see the detective you hired over the phone. This is your first meeting. You have Maya's photo in your inventory and need to approach them immediately to give it to them and explain the case.`;
+    }
+
+    // Add user message for this event
+    this.messages.push({
+      role: "user",
+      content: contextDescription,
+      timestamp: Date.now(),
+      event: eventType,
+    });
+
+    console.log(`[DEBUG] ${this.name}: Added event message. Total messages: ${this.messages.length}`);
+    console.log(`[DEBUG] ${this.name}: Messages:`, this.messages.map(m => `${m.role}: ${m.content?.substring(0, 50)}...`));
+
+    // Reset timeout timer for any event
+    this.startRandomTimeout();
+
+    // If already processing, cancel current processing and restart with new event
+    if (this.pendingLLMRequest) {
+      this.logger.npcBehavior(this.name, `Cancelling current processing for new event: ${eventType}`);
+      this.pendingLLMRequest = undefined; // Cancel current request
+    }
 
     // For proximity, speech, and timeout events, use AI to generate contextual responses
     if (
@@ -285,71 +358,11 @@ export class PersistentNPC extends BaseActor {
           this.logger.debug(LogTag.NPC_BEHAVIOR, `- ${tool.name}`, this.name)
         );
 
-        // Create context description
-        let contextDescription = "";
-        const recentSpeech = this.conversationHistory
-          .filter(
-            (msg) => msg.role === "tool" && msg.content?.includes("said:")
-          )
-          .slice(-2);
-
-        if (eventType === "player_nearby") {
-          // Get actual current distance for accurate context
-          const gameManager = (globalThis as any).gameManager;
-          const player = gameManager?.entityManager?.getPlayer();
-          let isClose = false;
-          
-          if (player) {
-            const playerPos = player.getPosition();
-            const myPos = this.getPosition();
-            const actualDistance = Math.round(
-              Math.sqrt(
-                (playerPos.x - myPos.x) ** 2 + (playerPos.y - myPos.y) ** 2
-              )
-            );
-            isClose = actualDistance <= 48; // Within interaction range
-          }
-          
-          if (recentSpeech.length > 0) {
-            contextDescription = isClose 
-              ? `The player you recently spoke to is now close to you.`
-              : `The player you recently spoke to is approaching again.`;
-          } else {
-            contextDescription = isClose
-              ? `A player is now close to you.`
-              : `A player just approached you.`;
-          }
-        } else if (eventType === "player_left") {
-          contextDescription = `A player just walked away from you (${eventData.distance}px away).`;
-        } else if (eventType === "npc_speech_heard") {
-          contextDescription = `${eventData.speakerName} just said "${eventData.message}" nearby (${eventData.distance}px away).`;
-        } else if (eventType === "player_speech") {
-          contextDescription = `A player just said: "${
-            eventData.message
-          }" (${Math.round(
-            eventData.distance
-          )}px away). Respond appropriately to what they said.`;
-        } else if (eventType === "timeout_prompt") {
-          contextDescription = `You haven't done anything for a while. Choose an action that fits your character.`;
-        } else if (eventType === "initial_approach") {
-          contextDescription = `You just arrived in town and see the detective you hired over the phone. This is your first meeting. You have Maya's photo in your inventory and need to approach them immediately to give it to them and explain the case.`;
-        }
-
-        // Build fresh context with recent tool results embedded in system prompt
-        const systemPrompt = this.buildSystemPrompt();
-
-        // Use fresh context approach - strategy-based context building
-        const baseMessages = [
-          { role: "system", content: systemPrompt },
-          {
-            role: "user", 
-            content: contextDescription,
-            timestamp: Date.now(),
-            event: eventType,
-          }
+        // Build messages for LLM request
+        const messages = [
+          this.getSystemPrompt(),
+          ...this.getRecentMessages()
         ];
-
-        const messages = this.buildContextMessages(baseMessages, contextDescription);
 
         this.logger.llmRequest(
           this.name,
@@ -361,278 +374,92 @@ export class PersistentNPC extends BaseActor {
           `Using tool calling for "${eventType}"`
         );
 
-        // Tool use loop with fresh context each iteration
-        let toolsExecuted = false;
-        let actionCount = 0;
-        const MAX_ACTIONS = 6;
+        // Create tool definitions from available tools
+        const toolDefinitions = tools.map((tool) => ({
+          type: "function",
+          function: {
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.parameters || {
+              type: "object",
+              properties: tool.name === "speak" ? {
+                message: { type: "string", description: "What to say" }
+              } : {},
+              required: tool.name === "speak" ? ["message"] : [],
+            },
+          },
+        }));
 
-        while (actionCount < MAX_ACTIONS) {
-          // Build fresh context for each iteration using strategy
-          const freshSystemPrompt = this.buildSystemPrompt();
-          const baseMessages = [
-            { role: "system", content: freshSystemPrompt },
-            {
-              role: "user", 
-              content: contextDescription,
-              timestamp: Date.now(),
-              event: eventType,
-            }
-          ];
-          const currentMessages = this.buildContextMessages(baseMessages, contextDescription);
-          // Recalculate tools fresh each time
-          const tools = this.getToolsForAI();
-          const toolDefinitions = tools
-            .map((tool) => ({
-              type: "function",
-              function: {
-                name: tool.name,
-                description: tool.description,
-                parameters: tool.parameters || {
-                  type: "object",
-                  properties:
-                    tool.name === "speak"
-                      ? {
-                          message: { type: "string", description: "What to say" },
-                        }
-                      : {},
-                  required: tool.name === "speak" ? ["message"] : [],
-                },
-              },
-            }))
-            .sort(() => Math.random() - 0.5); // Randomize tool order
-
-          this.logger.llmRequest(
-            this.name,
-            `Sending request to LLM (attempt ${actionCount + 1})`
-          );
-
-          // Set pending request with timeout handling
-          this.pendingLLMRequest = Promise.race([
-            this.aiService.generateResponseWithTools(currentMessages, toolDefinitions),
-            new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('LLM request timeout')), 30000)
-            )
-          ]);
-
+        // Make single LLM request
+        this.pendingLLMRequest = this.aiService.generateResponseWithTools(messages, toolDefinitions);
+        
+        try {
           const response = await this.pendingLLMRequest;
           
-          // Clear pending request immediately after response
-          this.pendingLLMRequest = undefined;
+          // Reset timeout timer after LLM response
+          this.startRandomTimeout();
 
           this.logger.llmResponse(this.name, `AI response received`, {
             hasToolCalls: response?.tool_calls?.length > 0,
             toolCallCount: response?.tool_calls?.length || 0,
           });
 
-          if (
-            response &&
-            response.tool_calls &&
-            response.tool_calls.length > 0
-          ) {
-            // Execute each tool call
-            for (const toolCall of response.tool_calls) {
-              const functionName = toolCall.function.name;
-              const args =
-                typeof toolCall.function.arguments === "string"
-                  ? JSON.parse(toolCall.function.arguments)
-                  : toolCall.function.arguments;
-
-              this.logger.llmToolUsed(this.name, functionName, args);
-
-              let toolResult = { success: false, message: "Unknown tool" };
-
-              // Check if this NPC has a handler for this tool
-              const availableTools = this.getToolsForAI();
-              const tool = availableTools.find((t) => t.name === functionName);
-
-              this.logger.debug(
-                LogTag.TOOLS,
-                `Available tools: ${availableTools
-                  .map((t) => t.name)
-                  .join(", ")}`,
-                this.name
-              );
-              this.logger.debug(
-                LogTag.TOOLS,
-                `Looking for tool: ${functionName}`,
-                this.name
-              );
-              this.logger.debug(
-                LogTag.TOOLS,
-                `Found tool: ${!!tool}`,
-                this.name
-              );
-
-              if (tool && tool.handler) {
-                this.logger.debug(
-                  LogTag.TOOLS,
-                  `Executing tool handler for ${functionName} with params:`,
-                  this.name
-                );
-                this.logger.debug(
-                  LogTag.TOOLS,
-                  JSON.stringify(args),
-                  this.name
-                );
-                toolResult = await tool.handler(args);
-                chosenAction = functionName;
-                this.logger.llmToolResult(this.name, functionName, toolResult);
-                
-                // Only increment action count on successful tool execution
-                if (toolResult.success) {
-                  actionCount++;
-                }
-              } else if (functionName === "speak") {
-                // Validate speak message
-                const speakMessage = args.message || "";
-                if (!speakMessage.trim()) {
-                  this.logger.error(
-                    `Empty speak message - skipping tool execution`,
-                    this.name
-                  );
-                  toolResult = {
-                    success: false,
-                    message: "Empty speak message",
-                  };
-                  chosenAction = "speak_failed";
-                } else {
-                  toolResult = await this.handleSpeak(args.message);
-                  chosenAction = "speak";
-                  // Only increment on successful speak
-                  if (toolResult.success) {
-                    actionCount++;
-                  }
-                }
-                this.logger.llmToolResult(this.name, "speak", toolResult);
-              } else if (functionName.startsWith("move_")) {
-                const direction = functionName.replace("move_", "");
-                toolResult = await this.handleMove(direction);
-                chosenAction = functionName;
-                this.logger.llmToolResult(this.name, functionName, toolResult);
-                
-                // Only increment on successful move
-                if (toolResult.success) {
-                  actionCount++;
-                }
-              }
-
-              // Store tool result for next iteration's context
-              this.conversationHistory.push({
-                role: "tool",
-                content: JSON.stringify(toolResult),
-                toolName: functionName,
-                toolArgs: args
-              });
-
-              toolsExecuted = true;
-
-              // Break if AI chose to take a break
-              if (functionName === "take_a_break") {
-                console.log(
-                  `[NPC_FLOW] ${this.name}: AI chose to take a break, ending action chain`
-                );
-                break;
-              }
-            }
-
-            // Continue the loop for potential follow-up actions
-          } else {
-            // No tool calls - check if there's text content to use as speech
-            console.log(
-              `[NPC_FLOW] ${this.name}: No tool calls in response, checking content for speech`
-            );
-            if (response.content && response.content.trim()) {
-              console.log(
-                `[NPC_FLOW] ${this.name}: Found text content, attempting to parse: ${response.content}`
-              );
-
-              // Try to extract JSON from content (handle embedded JSON)
-              const jsonMatch = response.content.match(
-                /\{[^{}]*"name"[^{}]*"parameters"[^{}]*\}/
-              );
-              if (jsonMatch) {
-                try {
-                  const parsed = JSON.parse(jsonMatch[0]);
-                  if (parsed.name && parsed.parameters) {
-                    console.log(
-                      `[NPC_FLOW] ${this.name}: Parsed action from content: ${parsed.name}`
-                    );
-
-                    // Execute the parsed tool
-                    const availableTools = this.getToolsForAI();
-                    const tool = availableTools.find(
-                      (t) => t.name === parsed.name
-                    );
-                    if (tool && tool.handler) {
-                      await tool.handler(parsed.parameters);
-                      chosenAction = parsed.name;
-                      toolsExecuted = true;
-                    } else if (
-                      parsed.name === "speak" &&
-                      parsed.parameters.message
-                    ) {
-                      await this.handleSpeak(parsed.parameters.message);
-                      chosenAction = "speak";
-                      toolsExecuted = true;
-                    }
-                  }
-                } catch (e) {
-                  console.log(
-                    `[NPC_FLOW] ${this.name}: Could not parse embedded JSON: ${e.message}`
-                  );
-                }
-              }
-              
-              // If no embedded JSON found, treat entire content as speech
-              if (!chosenAction) {
-                console.log(
-                  `[NPC_FLOW] ${this.name}: No embedded JSON found, treating entire content as speech`
-                );
-                await this.handleSpeak(response.content.trim());
-                chosenAction = "speak";
-                toolsExecuted = true;
-              }
-            }
-
-            // If we executed speech or parsed tools, continue the loop for potential AI response
-            if (chosenAction) {
-              actionCount++; // Increment action counter
-              continue; // Continue the loop to get AI response to the speech
-            }
-
-            // No content found - add instruction to use tools and reprompt
-            console.log(
-              `[NPC_FLOW] ${this.name}: No content found, instructing LLM to use tools`
-            );
-            
-            // Add instruction message and continue the loop
-            currentMessages.push({
-              role: "user",
-              content: "You must use one of the available tools to take action. Please choose an appropriate tool from the list provided.",
-              timestamp: Date.now()
+          if (response && response.tool_calls && response.tool_calls.length > 0) {
+            // Add assistant message with tool calls
+            this.messages.push({
+              role: "assistant",
+              content: response.content,
+              tool_calls: response.tool_calls
             });
-            
-            actionCount++; // Increment to prevent infinite loops
-            continue; // Continue the loop to get LLM response with tools
-          }
 
-          // Safety check - if we hit max actions, force break
-          if (actionCount >= MAX_ACTIONS) {
-            console.log(
-              `[NPC_FLOW] ${this.name}: Hit max actions (${MAX_ACTIONS}), forcing break`
-            );
-            break;
+            // Execute the first tool call only
+            const toolCall = response.tool_calls[0];
+            const functionName = toolCall.function.name;
+            const args = typeof toolCall.function.arguments === "string"
+              ? JSON.parse(toolCall.function.arguments)
+              : toolCall.function.arguments;
+
+            this.logger.llmToolUsed(this.name, functionName, args);
+
+            let toolResult = { success: false, message: "Unknown tool" };
+            const availableTools = this.getToolsForAI();
+            const tool = availableTools.find((t) => t.name === functionName);
+
+            if (tool && tool.handler) {
+              toolResult = await tool.handler(args);
+              chosenAction = functionName;
+            } else if (functionName === "speak") {
+              if (!args.message?.trim()) {
+                toolResult = { success: false, message: "Empty speak message" };
+              } else {
+                toolResult = await this.handleSpeak(args.message);
+                chosenAction = "speak";
+              }
+            } else if (functionName.startsWith("move_")) {
+              const direction = functionName.replace("move_", "");
+              toolResult = await this.handleMove(direction);
+              chosenAction = functionName;
+            }
+
+            // Add tool result message
+            this.messages.push({
+              role: "tool",
+              tool_call_id: toolCall.id,
+              content: toolResult.message
+            });
+
+            this.logger.llmToolResult(this.name, functionName, toolResult);
+          } else if (response.content) {
+            // Add assistant message without tool calls
+            this.messages.push({
+              role: "assistant",
+              content: response.content
+            });
           }
+        } finally {
+          // Always clear the pending request
+          this.pendingLLMRequest = undefined;
         }
-
-        // Reset timeout now that the full chain is complete
-        this.resetTimeout();
-
-        // Update conversation history with only tool results for system prompt context
-        // Keep only the most recent tool results (last 5)
-        this.conversationHistory = this.conversationHistory
-          .filter(msg => msg.role === "tool")
-          .slice(-5);
       } catch (error) {
         // Clear pending request on error
         this.pendingLLMRequest = undefined;
@@ -644,12 +471,6 @@ export class PersistentNPC extends BaseActor {
         // No fallback actions - let failures be visible for development
         chosenAction = "ai_failed";
       }
-    } else {
-      // This shouldn't happen - log it as an error
-      console.error(
-        `[NPC_FLOW] ${this.name}: No AI response for event "${eventType}" - this should not happen!`
-      );
-      chosenAction = "ai_failed";
     }
 
     console.log(
@@ -658,7 +479,11 @@ export class PersistentNPC extends BaseActor {
   }
 
   // Public method to trigger events
+  /**
+   * Public interface to trigger AI events - validates NPC state and starts processing
+   */
   public triggerEvent(eventType: string, eventData?: any): void {
+    this.logger.npcEventProcessed(this.name, eventType, eventData);
     this.logger.npcBehavior(this.name, `Received event "${eventType}"`);
 
     // Check if this NPC is paused by the AI system
@@ -757,19 +582,69 @@ export class PersistentNPC extends BaseActor {
     }
   }
 
+  /**
+   * Get recent messages while respecting tool call boundaries
+   */
+  private getRecentMessages(maxMessages: number = 10): any[] {
+    console.log(`[DEBUG] ${this.name}: getRecentMessages called. Total messages: ${this.messages.length}`);
+    
+    if (this.messages.length <= maxMessages) {
+      console.log(`[DEBUG] ${this.name}: Returning all ${this.messages.length} messages`);
+      return this.messages;
+    }
+    
+    // Work backwards to find complete conversation boundaries
+    let count = 0;
+    
+    for (let i = this.messages.length - 1; i >= 0 && count < maxMessages; i--) {
+      const msg = this.messages[i];
+      count++;
+      
+      // If we hit a user message, this could be a good starting point
+      if (msg.role === "user") {
+        // Make sure we don't have orphaned tool results before this
+        if (i === 0 || this.messages[i-1].role !== "tool") {
+          console.log(`[DEBUG] ${this.name}: Found boundary at index ${i}, returning ${this.messages.length - i} messages`);
+          return this.messages.slice(i);
+        }
+      }
+    }
+    
+    console.log(`[DEBUG] ${this.name}: No clean boundary found, returning all messages`);
+    return this.messages; // fallback to all messages if no clean boundary found
+  }
+
+  /**
+   * Get system prompt as message object
+   */
+  private getSystemPrompt(): any {
+    return {
+      role: "system",
+      content: this.buildSystemPrompt()
+    };
+  }
+
   // Build context based on selected strategy
-  private buildContextMessages(baseMessages: any[], contextDescription: string): any[] {
-    const recentToolResults = this.conversationHistory
-      .filter(msg => msg.role === "tool")
+  /**
+   * Builds context messages for AI using different strategies (full_context, system_prompt, etc.)
+   */
+  private buildContextMessages(
+    baseMessages: any[],
+    contextDescription: string,
+    historyToUse?: any[]
+  ): any[] {
+    const conversationHistory = historyToUse || this.conversationHistory;
+    const recentToolResults = conversationHistory
+      .filter((msg) => msg.role === "tool")
       .slice(-this.MAX_CONTEXT_ACTIONS);
 
     switch (this.CONTEXT_STRATEGY) {
-      case 'full_context':
+      case "full_context":
         // Include complete conversation with assistant messages, tool calls, and tool results
         const fullMessages = [baseMessages[0]]; // system prompt
-        
+
         // Add recent conversation history with proper structure
-        const recentHistory = this.conversationHistory.slice(-10); // Last 10 interactions
+        const recentHistory = conversationHistory.slice(-10); // Last 10 interactions
         for (let i = 0; i < recentHistory.length; i++) {
           const msg = recentHistory[i];
           if (msg.role === "tool") {
@@ -777,64 +652,67 @@ export class PersistentNPC extends BaseActor {
             fullMessages.push({
               role: "assistant",
               content: null,
-              tool_calls: [{
-                id: `tool_${Date.now()}_${Math.random()}`,
-                type: "function",
-                function: {
-                  name: msg.toolName || "unknown_tool",
-                  arguments: JSON.stringify(msg.toolArgs || {})
-                }
-              }]
+              tool_calls: [
+                {
+                  id: `tool_${Date.now()}_${Math.random()}`,
+                  type: "function",
+                  function: {
+                    name: msg.toolName || "unknown_tool",
+                    arguments: JSON.stringify(msg.toolArgs || {}),
+                  },
+                },
+              ],
             });
-            
+
             // Add tool result
             fullMessages.push({
               role: "tool",
               tool_call_id: `tool_${Date.now()}_${Math.random()}`,
-              content: this.parseToolResult(msg.content)
+              content: this.parseToolResult(msg.content),
             });
           }
         }
-        
+
         fullMessages.push(baseMessages[1]); // user message
         return fullMessages;
 
-      case 'conversation_history':
+      case "conversation_history":
         // Keep recent tool results as conversation messages
         return [
           baseMessages[0], // system prompt
-          ...recentToolResults.map(result => ({
+          ...recentToolResults.map((result) => ({
             role: "tool",
             tool_call_id: `tool_${Date.now()}_${Math.random()}`,
-            content: this.parseToolResult(result.content)
+            content: this.parseToolResult(result.content),
           })),
-          baseMessages[1] // user message
+          baseMessages[1], // user message
         ];
 
-      case 'user_feedback':
+      case "user_feedback":
         // Add user feedback about repetitive behavior
         const messages = [...baseMessages];
         if (this.isRepetitiveBehavior(recentToolResults)) {
           messages.splice(-1, 0, {
             role: "user",
-            content: "You've been repeating the same actions. Try something different - speak to nearby characters or use available interaction tools.",
-            timestamp: Date.now()
+            content:
+              "You've been repeating the same actions. Try something different - speak to nearby characters or use available interaction tools.",
+            timestamp: Date.now(),
           });
         }
         return messages;
 
-      case 'hybrid':
+      case "hybrid":
         // Combine system prompt context + conversation history
         return [
           baseMessages[0], // system prompt (already has RECENT ACTIONS)
-          ...recentToolResults.slice(-2).map(result => ({
+          ...recentToolResults.slice(-2).map((result) => ({
             role: "assistant",
-            content: `I ${this.parseToolResult(result.content).toLowerCase()}.`
+            content: `I ${this.parseToolResult(result.content).toLowerCase()}.`,
           })),
-          baseMessages[1] // user message
+          baseMessages[1], // user message
         ];
 
-      case 'system_prompt':
+      case "system_prompt":
       default:
         // Current approach - context in system prompt
         return baseMessages;
@@ -852,20 +730,23 @@ export class PersistentNPC extends BaseActor {
 
   private isRepetitiveBehavior(recentResults: any[]): boolean {
     if (recentResults.length < 3) return false;
-    
-    const actions = recentResults.map(r => {
+
+    const actions = recentResults.map((r) => {
       const parsed = this.parseToolResult(r.content);
-      return parsed.split(' ')[0]; // Get action verb
+      return parsed.split(" ")[0]; // Get action verb
     });
-    
+
     // Check if last 3 actions are the same or similar movement
     const lastThree = actions.slice(-3);
-    return lastThree.every(action => 
-      action.includes('moved') || action.includes('move')
+    return lastThree.every(
+      (action) => action.includes("moved") || action.includes("move")
     );
   }
 
   // Build system prompt - can be overridden by subclasses
+  /**
+   * Builds comprehensive system prompt with spatial awareness and behavioral guidelines
+   */
   protected buildSystemPrompt(): string {
     const currentPos = this.getPosition();
 
@@ -952,9 +833,9 @@ export class PersistentNPC extends BaseActor {
     // Add recent actions context from conversation history
     let recentActionsSection = "";
     const recentToolResults = this.conversationHistory
-      .filter(msg => msg.role === "tool")
+      .filter((msg) => msg.role === "tool")
       .slice(-3); // Last 3 tool results
-    
+
     if (recentToolResults.length > 0) {
       recentActionsSection = "\n\nRECENT ACTIONS:\n";
       recentToolResults.forEach((result, index) => {
@@ -989,6 +870,8 @@ BEHAVIORAL GUIDELINES:
 
   // Implement BaseActor abstract method
   protected setPosition(x: number, y: number): void {
+    this.logger.debug(LogTag.NPC_BEHAVIOR, `setPosition: (${this.position.x}, ${this.position.y}) → (${x}, ${y})`, this.name);
+    
     this.position.x = x;
     this.position.y = y;
 
@@ -1010,23 +893,45 @@ BEHAVIORAL GUIDELINES:
   // Implement smooth movement using pathfinding
   protected moveToPosition(x: number, y: number): Promise<void> {
     return new Promise((resolve) => {
-      console.log(`[NPC_FLOW] ${this.name}: moveToPosition called - sprite: ${!!this.sprite}, scene: ${!!this.sprite?.scene}`);
-      
+      console.log(
+        `[NPC_FLOW] ${this.name}: moveToPosition called - sprite: ${!!this
+          .sprite}, scene: ${!!this.sprite?.scene}`
+      );
+
       if (!this.sprite || !this.currentScene) {
-        console.log(`[NPC_FLOW] ${this.name}: No sprite/scene - teleporting to (${x}, ${y})`);
+        console.log(
+          `[NPC_FLOW] ${this.name}: No sprite/scene - teleporting to (${x}, ${y})`
+        );
         this.setPosition(x, y);
         resolve();
         return;
       }
 
+      // Stop any existing movement and reset animation
+      if (this.currentMoveTween) {
+        this.currentMoveTween.stop();
+        this.currentMoveTween = undefined;
+        
+        // Reset to idle animation
+        const spriteKey = this.config.spriteKey || "adam";
+        const idleAnimKey = `${spriteKey}_idle_down`;
+        if (this.sprite.anims && this.sprite.scene.anims.exists(idleAnimKey)) {
+          this.sprite.play(idleAnimKey, true);
+        }
+      }
+
       const currentPos = this.getPosition();
-      const distance = Math.sqrt(Math.pow(x - currentPos.x, 2) + Math.pow(y - currentPos.y, 2));
-      
+      const distance = Math.sqrt(
+        Math.pow(x - currentPos.x, 2) + Math.pow(y - currentPos.y, 2)
+      );
+
       // Use slower, more realistic movement speed like pathfinding system
       const moveSpeed = 150; // pixels per second
       const duration = Math.max(500, (distance / moveSpeed) * 1000); // At least 500ms
-      
-      console.log(`[NPC_FLOW] ${this.name}: Animating from (${currentPos.x}, ${currentPos.y}) to (${x}, ${y}) over ${duration}ms`);
+
+      console.log(
+        `[NPC_FLOW] ${this.name}: Animating from (${currentPos.x}, ${currentPos.y}) to (${x}, ${y}) over ${duration}ms`
+      );
 
       // Determine direction for animation
       const dx = x - currentPos.x;
@@ -1039,40 +944,66 @@ BEHAVIORAL GUIDELINES:
       }
 
       // Play walking animation (use NPC's own sprite key)
-      const spriteKey = this.config.spriteKey || 'adam';
+      const spriteKey = this.config.spriteKey || "adam";
       const animKey = `${spriteKey}_walk_${direction}`;
       if (this.sprite.anims && this.sprite.scene.anims.exists(animKey)) {
         this.sprite.play(animKey, true);
       }
 
       // Use the same tween approach as pathfinding system
-      this.currentScene.tweens.add({
+      this.currentMoveTween = this.currentScene.tweens.add({
         targets: [this.sprite, this.nameText],
         x: x,
         y: (target: any) => (target === this.nameText ? y - 35 : y),
         duration: duration,
-        ease: 'Linear', // Same as pathfinding system
+        ease: "Linear", // Same as pathfinding system
         onUpdate: () => {
           // Keep animation playing during tween (like pathfinding system)
-          if (this.sprite.anims && this.sprite.anims.currentAnim && this.sprite.anims.currentAnim.key === animKey) {
+          if (
+            this.sprite.anims &&
+            this.sprite.anims.currentAnim &&
+            this.sprite.anims.currentAnim.key === animKey
+          ) {
             // Animation is still playing, good
-          } else if (this.sprite.anims && this.sprite.scene.anims.exists(animKey)) {
+          } else if (
+            this.sprite.anims &&
+            this.sprite.scene.anims.exists(animKey)
+          ) {
             // Animation stopped, restart it
             this.sprite.play(animKey, true);
           }
         },
         onComplete: () => {
-          console.log(`[NPC_FLOW] ${this.name}: Animation completed at (${x}, ${y})`);
+          console.log(
+            `[NPC_FLOW] ${this.name}: Animation completed at (${x}, ${y})`
+          );
           this.setPosition(x, y);
 
           // Play idle animation (like pathfinding system)
           const idleAnimKey = `${spriteKey}_idle_${direction}`;
-          if (this.sprite.anims && this.sprite.scene.anims.exists(idleAnimKey)) {
+          if (
+            this.sprite.anims &&
+            this.sprite.scene.anims.exists(idleAnimKey)
+          ) {
             this.sprite.play(idleAnimKey, true);
           }
 
+          this.currentMoveTween = undefined;
           resolve();
         },
+        onStop: () => {
+          // Handle interruption - reset to idle animation
+          const idleAnimKey = `${spriteKey}_idle_${direction}`;
+          if (
+            this.sprite.anims &&
+            this.sprite.scene.anims.exists(idleAnimKey)
+          ) {
+            this.sprite.play(idleAnimKey, true);
+          }
+          
+          this.currentMoveTween = undefined;
+          resolve();
+        }
       });
     });
   }
@@ -1147,23 +1078,28 @@ BEHAVIORAL GUIDELINES:
 
   // Override BaseActor methods - NPCs offer give tools to others
   public getOfferedTools(): Tool[] {
-    const toolName = `give_${this.id.toLowerCase().replace(/\s+/g, '_')}`;
-    return [{
-      name: toolName,
-      description: `Give an item to ${this.name}`,
-      parameters: {
-        type: 'object',
-        properties: {
-          item: { type: 'string', description: 'Item to give' },
-          item_name: { type: 'string', description: 'Name of item to give' }
+    const toolName = `give_${this.id.toLowerCase().replace(/\s+/g, "_")}`;
+    return [
+      {
+        name: toolName,
+        description: `Give an item to ${this.name}`,
+        parameters: {
+          type: "object",
+          properties: {
+            item: { type: "string", description: "Item to give" },
+            item_name: { type: "string", description: "Name of item to give" },
+          },
+          required: [],
         },
-        required: []
+        handler: async (params) => {
+          const itemToGive = params.item || params.item_name;
+          return {
+            success: true,
+            message: `${this.name} received ${itemToGive}`,
+          };
+        },
       },
-      handler: async (params) => {
-        const itemToGive = params.item || params.item_name;
-        return { success: true, message: `${this.name} received ${itemToGive}` };
-      }
-    }];
+    ];
   }
 
   // Override to add NPC-specific persistent tools
@@ -1245,6 +1181,8 @@ BEHAVIORAL GUIDELINES:
 
     const playerPos = positionTracker.getPosition("player");
     if (!playerPos) return;
+
+    const gameManager = (globalThis as any).gameManager;
 
     const currentPos = this.getPosition();
     const distance = Math.sqrt(
@@ -1356,33 +1294,67 @@ BEHAVIORAL GUIDELINES:
     }
   }
 
+  /**
+   * Shows action bubble above NPC for non-speech tool usage
+   */
+  private showActionBubble(message: string): void {
+    if (this.actionBubble && this.sprite) {
+      this.actionBubble.show(
+        this.sprite.x,
+        this.sprite.y - 60,
+        message,
+        this.sprite
+      );
+    }
+  }
+
+  /**
+   * Formats action messages for display in action bubbles based on tool type
+   */
+  private formatActionMessage(
+    toolName: string,
+    args: any,
+    result: any
+  ): string {
+    // Format action messages based on tool type
+    switch (toolName) {
+      case "toggle_following":
+        return this.isFollowing
+          ? `*${this.name} started following you*`
+          : `*${this.name} stopped following you*`;
+
+      case "give_item":
+        return `*${this.name} gives you ${args.item_name || "an item"}*`;
+
+      case "move_north":
+      case "move_south":
+      case "move_east":
+      case "move_west":
+        const direction = toolName.replace("move_", "");
+        return `*${this.name} moved ${direction}*`;
+
+      default:
+        // Generic format for other tools
+        if (result.message) {
+          return `*${this.name} ${result.message.toLowerCase()}*`;
+        }
+        return `*${this.name} used ${toolName}*`;
+    }
+  }
+
+  /**
+   * Displays speech bubble above NPC (always visible to player)
+   */
   public say(message: string): void {
     if (this.speechBubble && this.sprite) {
-      // Only show speech bubble if player is within hearing range
-      const gameManager = (globalThis as any).gameManager;
-      if (gameManager?.proximitySystem) {
-        const playerPos = gameManager.entityManager.getPlayer()?.getPosition();
-        if (playerPos) {
-          const distance = Phaser.Math.Distance.Between(
-            this.sprite.x,
-            this.sprite.y,
-            playerPos.x,
-            playerPos.y
-          );
-
-          // Only show speech bubble if within hearing range (150px)
-          if (distance <= 150) {
-            this.speechBubble.show(
-              this.sprite.x,
-              this.sprite.y - 60,
-              message,
-              this.name,
-              true,
-              this.sprite
-            );
-          }
-        }
-      }
+      this.speechBubble.show(
+        this.sprite.x,
+        this.sprite.y - 60,
+        message,
+        this.name,
+        true,
+        this.sprite
+      );
     }
   }
 
@@ -1422,6 +1394,10 @@ BEHAVIORAL GUIDELINES:
 
     if (this.speechBubble) {
       this.speechBubble.destroy();
+    }
+
+    if (this.actionBubble) {
+      this.actionBubble.destroy();
     }
 
     this.currentScene = null;

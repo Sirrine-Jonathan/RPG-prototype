@@ -3,10 +3,12 @@ import { Pathfinding } from '../utils/Pathfinding';
 export class PathfindingSystem {
   private pathfinding: Pathfinding | null = null;
   private currentSceneKey: string = '';
-  private currentPath: Array<{ x: number, y: number }> = [];
-  private pathIndex: number = 0;
-  private isMoving: boolean = false;
-  private currentPlayer: any = null;
+  private activeMovements: Map<string, {
+    path: Array<{ x: number, y: number }>,
+    pathIndex: number,
+    player: any,
+    isPlayer: boolean
+  }> = new Map();
   
   public initialize(): void {
     // Will be initialized per scene
@@ -21,31 +23,56 @@ export class PathfindingSystem {
   }
   
   public isPathfindingActive(): boolean {
-    return this.isMoving;
+    return this.activeMovements.size > 0;
   }
   
   public cancelPathfinding(): void {
-    if (this.isMoving) {
-      console.log('🎯 PathfindingSystem: Pathfinding cancelled by user input');
+    // Only cancel player pathfinding
+    const playerMovement = Array.from(this.activeMovements.entries())
+      .find(([_, movement]) => movement.isPlayer);
+    
+    if (playerMovement) {
+      const [playerId, movement] = playerMovement;
+      console.log('🎯 PathfindingSystem: Player pathfinding cancelled by user input');
       
-      // Stop any active tweens
-      if (this.currentPlayer) {
-        const sprite = this.currentPlayer.getSprite();
-        if (sprite && sprite.scene) {
-          sprite.scene.tweens.killTweensOf(sprite);
+      // Stop player's tweens and reset animation
+      const sprite = movement.player.getSprite();
+      if (sprite && sprite.scene) {
+        sprite.scene.tweens.killTweensOf(sprite);
+        
+        // Reset to idle animation
+        if (sprite.anims && sprite.anims.currentAnim) {
+          const currentAnim = sprite.anims.currentAnim.key;
+          if (currentAnim.includes('_walk_')) {
+            const spriteKey = currentAnim.split('_walk_')[0];
+            const direction = currentAnim.split('_walk_')[1];
+            const idleAnimKey = `${spriteKey}_idle_${direction}`;
+            
+            if (sprite.scene.anims.exists(idleAnimKey)) {
+              sprite.play(idleAnimKey, true);
+            }
+          }
         }
       }
       
-      this.isMoving = false;
-      this.currentPath = [];
-      this.pathIndex = 0;
-      this.currentPlayer = null;
+      this.activeMovements.delete(playerId);
     }
   }
   
-  public movePlayerTo(player: any, targetX: number, targetY: number): void {
-    if (!this.pathfinding || this.isMoving) {
+  public movePlayerTo(player: any, targetX: number, targetY: number, isActualPlayer: boolean = false): void {
+    if (!this.pathfinding) {
       return;
+    }
+    
+    const playerId = player.id || player.name || 'unknown';
+    
+    // Cancel existing movement for this entity
+    if (this.activeMovements.has(playerId)) {
+      const sprite = player.getSprite();
+      if (sprite && sprite.scene) {
+        sprite.scene.tweens.killTweensOf(sprite);
+      }
+      this.activeMovements.delete(playerId);
     }
     
     const playerPos = player.getPosition();
@@ -58,18 +85,21 @@ export class PathfindingSystem {
     console.log(`🎯 PathfindingSystem: Found path with ${path.length} steps`);
     
     if (path.length > 1) {
-      this.currentPath = path.slice(1); // Skip current position
-      this.pathIndex = 0;
-      this.isMoving = true;
-      this.currentPlayer = player;
-      this.followPath();
+      this.activeMovements.set(playerId, {
+        path: path.slice(1), // Skip current position
+        pathIndex: 0,
+        player: player,
+        isPlayer: isActualPlayer
+      });
+      this.followPath(playerId);
     }
   }
   
-  private followPath(): void {
-    if (!this.currentPlayer || this.pathIndex >= this.currentPath.length) {
+  private followPath(playerId: string): void {
+    const movement = this.activeMovements.get(playerId);
+    if (!movement || movement.pathIndex >= movement.path.length) {
       // Path completed - play idle animation facing last direction
-      const sprite = this.currentPlayer?.getSprite();
+      const sprite = movement?.player?.getSprite();
       if (sprite && sprite.anims) {
         // Get last direction from current animation or default to down
         let lastDirection = 'down';
@@ -81,7 +111,7 @@ export class PathfindingSystem {
           else if (animName.includes('_right')) lastDirection = 'right';
         }
         
-        const spriteKey = this.currentPlayer.config?.spriteKey || 'adam';
+        const spriteKey = movement.player.config?.spriteKey || 'adam';
         const idleAnimKey = `${spriteKey}_idle_${lastDirection}`;
         if (sprite.scene.anims.exists(idleAnimKey)) {
           sprite.play(idleAnimKey, true);
@@ -89,32 +119,29 @@ export class PathfindingSystem {
       }
       
       // Call resolve function if this is an NPC waiting for movement completion
-      if (this.currentPlayer._moveResolve) {
-        this.currentPlayer._moveResolve(); // Just resolve the Promise, return value handled in handleMoveTo
-        delete this.currentPlayer._moveResolve;
+      if (movement?.player._moveResolve) {
+        movement.player._moveResolve();
+        delete movement.player._moveResolve;
       }
       
-      this.isMoving = false;
-      this.currentPath = [];
-      this.pathIndex = 0;
-      this.currentPlayer = null;
+      this.activeMovements.delete(playerId);
       return;
     }
     
-    const target = this.currentPath[this.pathIndex];
-    const playerPos = this.currentPlayer.getPosition();
+    const target = movement.path[movement.pathIndex];
+    const playerPos = movement.player.getPosition();
     const distance = Phaser.Math.Distance.Between(playerPos.x, playerPos.y, target.x, target.y);
     
     if (distance < 5) {
-      this.pathIndex++;
-      this.followPath();
+      movement.pathIndex++;
+      this.followPath(playerId);
       return;
     }
     
     // Get the scene to create tween
-    const sprite = this.currentPlayer.getSprite();
+    const sprite = movement.player.getSprite();
     if (!sprite || !sprite.scene) {
-      this.isMoving = false;
+      this.activeMovements.delete(playerId);
       return;
     }
     
@@ -122,7 +149,6 @@ export class PathfindingSystem {
     const dx = target.x - playerPos.x;
     const dy = target.y - playerPos.y;
     let direction = 'down';
-    
     if (Math.abs(dx) > Math.abs(dy)) {
       direction = dx > 0 ? 'right' : 'left';
     } else {
@@ -130,13 +156,11 @@ export class PathfindingSystem {
     }
     
     // Play walking animation
-    const spriteKey = this.currentPlayer.config?.spriteKey || 'adam';
+    const spriteKey = movement.player.config?.spriteKey || 'adam';
     const animKey = `${spriteKey}_walk_${direction}`;
     if (sprite.anims && sprite.scene.anims.exists(animKey)) {
       console.log(`🚶 PathfindingSystem: Playing animation ${animKey} on sprite at (${sprite.x}, ${sprite.y})`);
       sprite.play(animKey, true);
-    } else {
-      console.warn(`🚶 PathfindingSystem: Animation ${animKey} not found`);
     }
     
     // Move smoothly to next point
@@ -157,39 +181,72 @@ export class PathfindingSystem {
       },
       onComplete: () => {
         // Check if pathfinding was cancelled
-        if (!this.currentPlayer) {
+        const currentMovement = this.activeMovements.get(playerId);
+        if (!currentMovement) {
           return;
         }
         
-        this.currentPlayer.setPosition(target.x, target.y);
+        currentMovement.player.setPosition(target.x, target.y);
         
-        // Update proximity system with new player position
+        // Only update proximity system if this is the actual player, not an NPC
         const gameManager = (globalThis as any).gameManager;
-        if (gameManager && gameManager.proximitySystem) {
-          gameManager.proximitySystem.updatePlayerPosition(target.x, target.y);
+        const actualPlayer = gameManager?.entityManager?.getPlayer();
+        if (currentMovement.player === actualPlayer) {
+          // Update proximity system with new player position
+          if (gameManager && gameManager.proximitySystem) {
+            gameManager.proximitySystem.updatePlayerPosition(target.x, target.y);
+          }
+          
+          // Emit player-moved event for AssistantNPC following
+          if (gameManager && gameManager.eventBus) {
+            gameManager.eventBus.emit('player-moved', { x: target.x, y: target.y });
+          }
         }
         
-        // Emit player-moved event for AssistantNPC following
-        if (gameManager && gameManager.eventBus) {
-          gameManager.eventBus.emit('player-moved', { x: target.x, y: target.y });
-        }
-        
-        this.pathIndex++;
-        this.followPath();
+        currentMovement.pathIndex++;
+        this.followPath(playerId);
       }
     });
   }
   
   public isPlayerMoving(): boolean {
-    return this.isMoving;
+    return Array.from(this.activeMovements.values()).some(movement => movement.isPlayer);
   }
   
   public cancelPlayerMovement(): void {
-    this.isMoving = false;
-    this.currentPath = [];
-    this.currentPathIndex = 0;
+    // Find and cancel only player movement
+    const playerMovement = Array.from(this.activeMovements.entries())
+      .find(([_, movement]) => movement.isPlayer);
+    
+    if (playerMovement) {
+      const [playerId] = playerMovement;
+      this.activeMovements.delete(playerId);
+    }
   }
   
+  public updateTarget(playerId: string, newTargetX: number, newTargetY: number): void {
+    const movement = this.activeMovements.get(playerId);
+    if (!movement || !this.pathfinding) {
+      return;
+    }
+    
+    const playerPos = movement.player.getPosition();
+    const newPath = this.pathfinding.findPath(playerPos.x, playerPos.y, newTargetX, newTargetY);
+    
+    if (newPath.length > 1) {
+      // Update the path and reset to start
+      movement.path = newPath.slice(1); // Skip current position
+      movement.pathIndex = 0;
+      
+      // Cancel current tween and restart pathfinding
+      const sprite = movement.player.getSprite();
+      if (sprite && sprite.scene) {
+        sprite.scene.tweens.killTweensOf(sprite);
+      }
+      
+      this.followPath(playerId);
+    }
+  }
   public getPathfinding(): Pathfinding | null {
     return this.pathfinding;
   }
@@ -197,9 +254,6 @@ export class PathfindingSystem {
   public shutdown(): void {
     this.pathfinding = null;
     this.currentSceneKey = '';
-    this.isMoving = false;
-    this.currentPath = [];
-    this.pathIndex = 0;
-    this.currentPlayer = null;
+    this.activeMovements.clear();
   }
 }

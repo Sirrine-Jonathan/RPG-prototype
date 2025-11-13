@@ -31,7 +31,8 @@ export class MovementSystem {
     gameManager.systemManager.pathfindingSystem.movePlayerTo(
       player,
       pointer.worldX,
-      pointer.worldY
+      pointer.worldY,
+      true  // This is the actual player
     );
   }
   
@@ -53,8 +54,8 @@ export class MovementSystem {
       gameManager.systemManager.pathfindingSystem.cancelPathfinding();
     }
     
-    // Don't process movement if pathfinding is still active
-    if (gameManager.systemManager.pathfindingSystem.isPathfindingActive()) {
+    // Don't process movement if player is pathfinding
+    if (gameManager.systemManager.pathfindingSystem.isPlayerMoving()) {
       return;
     }
     

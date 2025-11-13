@@ -3,17 +3,18 @@
 The game provides a real-time logging API for debugging and monitoring NPC behavior, AI interactions, and system events.
 
 ## Base URL
+
 ```
 http://localhost:3003/api/logs
 ```
 
 ## Query Parameters
 
-| Parameter | Description | Example Values |
-|-----------|-------------|----------------|
-| `tag` | Filter by log tag | `LLM`, `NPC_BEHAVIOR`, `TOOLS`, `INVENTORY` |
-| `entity` | Filter by entity name | `Margaret`, `Assistant`, `Player` |
-| `lines` | Limit number of lines returned | `50`, `100`, `500` |
+| Parameter | Description                    | Example Values                              |
+| --------- | ------------------------------ | ------------------------------------------- |
+| `tag`     | Filter by log tag              | `LLM`, `NPC_BEHAVIOR`, `TOOLS`, `INVENTORY` |
+| `entity`  | Filter by entity name          | `Margaret`, `Assistant`, `Player`           |
+| `lines`   | Limit number of lines returned | `50`, `100`, `500`                          |
 
 ## Available Log Tags
 
@@ -27,26 +28,31 @@ http://localhost:3003/api/logs
 ## Example Requests
 
 ### Get all logs
+
 ```
 GET http://localhost:3003/api/logs
 ```
 
 ### Get LLM-related logs only
+
 ```
 GET http://localhost:3003/api/logs?tag=LLM
 ```
 
 ### Get logs for specific NPC
+
 ```
 GET http://localhost:3003/api/logs?entity=Margaret
 ```
 
 ### Get recent AI interactions for Assistant
+
 ```
 GET http://localhost:3003/api/logs?tag=LLM&entity=Assistant&lines=50
 ```
 
 ### Get tool usage across all NPCs
+
 ```
 GET http://localhost:3003/api/logs?tag=TOOLS&lines=100
 ```
@@ -54,12 +60,13 @@ GET http://localhost:3003/api/logs?tag=TOOLS&lines=100
 ## Response Format
 
 Returns JSON array of log entries:
+
 ```json
 [
   {
     "timestamp": "15:53:49",
     "tag": "LLM",
-    "entity": "Margaret Chen",
+    "entity": "Grace Sirrine",
     "message": "AI response received",
     "data": { "hasToolCalls": true, "toolCallCount": 1 }
   }

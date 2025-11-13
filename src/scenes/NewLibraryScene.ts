@@ -32,6 +32,7 @@ export class NewLibraryScene extends NewGameplayScene {
     this.levelLoader.loadLevel("library_interior").then(() => {
       console.log(`📚 NewLibraryScene: Library level loaded`);
       this.setupPortalsAndSpawns();
+      this.createInitialEntities(); // Add this call to restore player
       this.createSceneNPCs();
       
       // Restore loaded state if available

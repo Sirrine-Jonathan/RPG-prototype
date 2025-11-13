@@ -3,11 +3,13 @@ import { GameManager } from "../core/GameManager";
 import { PortalData } from "../core/SceneTransitionManager";
 import { AssetManager } from "../systems/AssetManager";
 import { QuickSpeechUI } from "../ui/QuickSpeechUI";
+import { Logger, LogTag } from "../utils/Logger";
 
 export abstract class NewGameplayScene extends BaseScene {
   protected gameManager: GameManager;
   protected assetManager: AssetManager;
   protected quickSpeechUI!: QuickSpeechUI;
+  protected logger = Logger.getInstance();
   
   constructor(config: Phaser.Types.Scenes.SettingsConfig) {
     super(config);
@@ -59,11 +61,40 @@ export abstract class NewGameplayScene extends BaseScene {
   private createInitialEntities(): void {
     // Create player if it doesn't exist
     let player = this.gameManager.entityManager.getPlayer();
+    
+    // Check for temporarily stored player from scene transition
+    this.logger.debug(LogTag.SCENE, `Checking tempPlayer: ${!!(globalThis as any).tempPlayer}`);
+    if (!player && (globalThis as any).tempPlayer) {
+      player = (globalThis as any).tempPlayer;
+      delete (globalThis as any).tempPlayer;
+      this.logger.debug(LogTag.SCENE, `Restored player from scene transition`);
+    }
+    
+    this.logger.debug(LogTag.SCENE, `EntityManager.getPlayer() returned: ${player ? 'existing player' : 'null'}`);
+    
     if (!player) {
       const spawn = this.getDefaultSpawn();
+      this.logger.debug(LogTag.SCENE, `Creating new player at default spawn: ${JSON.stringify(spawn)}`);
       player = this.gameManager.entityManager.createPlayer(this, spawn.x, spawn.y);
     } else {
+      this.logger.debug(LogTag.SCENE, `Transferring existing player to scene: ${this.scene.key}`);
       player.transferToScene(this);
+      
+      // Check if this is a portal transition and position player at correct spawn
+      const portalService = (this as any).portalService;
+      if (portalService) {
+        const targetSpawn = portalService.getTargetSpawn();
+        this.logger.debug(LogTag.SCENE, `Portal service returned spawn: ${JSON.stringify(targetSpawn)}`);
+        
+        if (targetSpawn) {
+          this.logger.debug(LogTag.SCENE, `Portal transition: positioning player at spawn ${targetSpawn.id} (${targetSpawn.x}, ${targetSpawn.y})`);
+          player.setPosition(targetSpawn.x, targetSpawn.y);
+        } else {
+          this.logger.debug(LogTag.SCENE, `No target spawn found, player remains at current position`);
+        }
+      } else {
+        this.logger.debug(LogTag.SCENE, `No portal service available on scene during createInitialEntities`);
+      }
     }
     
     // Create scene NPCs

@@ -1,4 +1,5 @@
 import { Debug } from "../utils/Debug";
+import { Logger, LogTag } from '../utils/Logger';
 
 export interface Portal {
     id: string;
@@ -22,6 +23,7 @@ export class PortalService {
     private lastTriggeredPortal: string = "";
     private triggerCooldown: number = 0;
     private debugGraphics: Phaser.GameObjects.Graphics | null = null;
+    private logger = Logger.getInstance();
 
     constructor(scene: Phaser.Scene) {
         this.scene = scene;
@@ -86,6 +88,52 @@ export class PortalService {
     getSpawnPoint(id: string): SpawnPoint | null {
         return this.spawnPoints.find(spawn => spawn.id === id) || null;
     }
+    
+    getTargetSpawn(): SpawnPoint | null {
+        // Check if there's a portal transition in progress
+        const transition = this.scene.registry.get('portalTransition');
+        this.logger.debug(LogTag.SCENE, `Checking for portal transition: ${JSON.stringify(transition)}`);
+        
+        if (transition && transition.targetPortalId) {
+            this.logger.debug(LogTag.SCENE, `Looking for spawn point: ${transition.targetPortalId}`);
+            
+            // First try exact match
+            let targetSpawn = this.getSpawnPoint(transition.targetPortalId);
+            if (targetSpawn) {
+                this.logger.debug(LogTag.SCENE, `Found exact match spawn: ${JSON.stringify(targetSpawn)}`);
+                return targetSpawn;
+            }
+            
+            this.logger.debug(LogTag.SCENE, `No exact match, trying scene-specific fallbacks for scene: ${this.scene.scene.key}`);
+            
+            // If no exact match, try to find a spawn point that makes sense for this scene
+            // For library scene, look for entrance spawn
+            if (this.scene.scene.key === 'NewLibraryScene') {
+                targetSpawn = this.getSpawnPoint('library_entrance_spawn');
+                if (targetSpawn) {
+                    this.logger.debug(LogTag.SCENE, `Using library entrance spawn for transition`);
+                    return targetSpawn;
+                }
+            }
+            
+            // For town scene, look for town library spawn
+            if (this.scene.scene.key === 'NewTownScene') {
+                targetSpawn = this.getSpawnPoint('town_library');
+                if (targetSpawn) {
+                    this.logger.debug(LogTag.SCENE, `Using town library spawn for transition`);
+                    return targetSpawn;
+                }
+            }
+            
+            // Fallback to default spawn
+            const defaultSpawn = this.getDefaultSpawn();
+            this.logger.debug(LogTag.SCENE, `Using default spawn as fallback: ${JSON.stringify(defaultSpawn)}`);
+            return defaultSpawn;
+        }
+        
+        this.logger.debug(LogTag.SCENE, `No portal transition found`);
+        return null;
+    }
 
     getDefaultSpawn(): SpawnPoint | null {
         return this.spawnPoints.find(spawn => spawn.isDefault) || this.spawnPoints[0] || null;
@@ -121,11 +169,13 @@ export class PortalService {
     }
 
     private async enterPortal(portal: Portal): Promise<void> {
+        this.logger.debug(LogTag.SCENE, `Entering portal ${portal.id} -> ${portal.targetScene}`);
         console.log(`Entering portal ${portal.id} -> ${portal.targetScene}`);
         
         // Check if we're using new architecture
         const gameManager = (globalThis as any).gameManager;
         if (gameManager) {
+            this.logger.debug(LogTag.SCENE, `Using new architecture scene transition`);
             // Use new architecture scene transition
             await gameManager.sceneTransitionManager.switchScene({
                 sourceScene: this.scene.scene.key,
@@ -134,6 +184,7 @@ export class PortalService {
                 targetPortalId: portal.targetPortalId
             }, this.scene);
         } else {
+            this.logger.debug(LogTag.SCENE, `Using fallback portal system`);
             // Fallback to old system
             this.scene.registry.set('portalTransition', {
                 targetScene: portal.targetScene,

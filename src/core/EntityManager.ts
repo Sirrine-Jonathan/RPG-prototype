@@ -48,6 +48,9 @@ export class EntityManager {
       npc = HistorianNPC.getInstance(scene, config);
     } else if (id === "scholar_marcus") {
       npc = ScholarNPC.getInstance(scene, config);
+    } else if (id === "librarian_sarah") {
+      // Use HistorianNPC as base for librarian (they're similar roles)
+      npc = HistorianNPC.getInstance(scene, config);
     } else if (id === "grace") {
       npc = CouncilLeaderNPC.getInstance(scene, config);
     } else if (id === "charlie") {

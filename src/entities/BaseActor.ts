@@ -243,7 +243,7 @@ export abstract class BaseActor {
     const target = targets.find(t => t.id === targetId);
     
     if (!target) {
-      return { success: false, message: `Target ${targetId} not found` };
+      return { success: false, message: `Target ${targetId} not found. Available targets: ${targets.map(t => t.id).join(', ')}` };
     }
     
     const currentPos = this.getPosition();
@@ -282,6 +282,46 @@ export abstract class BaseActor {
         
         gameManager.systemManager.pathfindingSystem.movePlayerTo(this, finalTargetX, finalTargetY);
         console.log(`[NPC_FLOW] ${this.name}: Using pathfinding to move toward ${target.name} at (${finalTargetX}, ${finalTargetY})`);
+        
+        // Set up dynamic target tracking if target is the player
+        if (target.id === 'player' || target.id === 'Detective Riley') {
+          const trackingInterval = setInterval(() => {
+            // Re-find the target to get updated position
+            const currentTargets = this.getVisibleTargets();
+            const currentTarget = currentTargets.find(t => t.id === target.id);
+            
+            if (!currentTarget) {
+              clearInterval(trackingInterval);
+              return;
+            }
+            
+            const currentTargetPos = currentTarget.position;
+            const myPos = this.getPosition();
+            const currentDistance = Math.sqrt(
+              (currentTargetPos.x - myPos.x) ** 2 + (currentTargetPos.y - myPos.y) ** 2
+            );
+            
+            // Stop tracking if we're close enough or pathfinding is done
+            if (currentDistance <= interactionDistance || !(this as any)._moveResolve) {
+              clearInterval(trackingInterval);
+              return;
+            }
+            
+            // Recalculate target position
+            const newNormalizedDx = (currentTargetPos.x - myPos.x) / currentDistance;
+            const newNormalizedDy = (currentTargetPos.y - myPos.y) / currentDistance;
+            const newMoveDistance = currentDistance - interactionDistance;
+            const newTargetX = myPos.x + newNormalizedDx * newMoveDistance;
+            const newTargetY = myPos.y + newNormalizedDy * newMoveDistance;
+            
+            // Update pathfinding target
+            gameManager.systemManager.pathfindingSystem.updateTarget(
+              this.id || this.name || 'unknown',
+              newTargetX,
+              newTargetY
+            );
+          }, 500); // Update every 500ms
+        }
       });
     } else {
       // Fallback to direct movement if pathfinding unavailable
@@ -412,8 +452,12 @@ export abstract class BaseActor {
       const hearersReport = listeners.length > 0 
         ? `Heard by: ${listeners.join(', ')}` 
         : 'No one was close enough to hear';
+      
+      // Add hint to wait for response if player heard the message
+      const playerHeard = listeners.some(listener => listener.includes('Player'));
+      const waitHint = playerHeard ? ' Wait for their response before taking further action.' : '';
         
-      return { success: true, message: `You said: "${message}" - ${hearersReport}` };
+      return { success: true, message: `You said: "${message}" - ${hearersReport}${waitHint}` };
     }
     
     return { success: true, message: `You said: "${message}"` };

@@ -414,6 +414,7 @@ export abstract class BaseActor {
         sceneKey = gameManager.scene.scene.key;
       }
       
+      console.log(`[BaseActor] Emitting npc_speech event for ${this.name}: "${message}"`);
       gameManager.eventBus.emit('npc_speech', {
         speakerId: this.id,
         speakerName: this.name,
@@ -434,6 +435,14 @@ export abstract class BaseActor {
         const playerDistance = Phaser.Math.Distance.Between(myPos.x, myPos.y, playerPos.x, playerPos.y);
         if (playerDistance <= hearingRange) {
           listeners.push(`Player (${Math.round(playerDistance)}px away)`);
+          
+          // QUICK FIX: Also emit player-heard directly to ensure chat sync
+          console.log(`[BaseActor] Player within range (${playerDistance}px), emitting player-heard event`);
+          gameManager.eventBus.emit('player-heard', {
+            speaker: this.name,
+            message: message,
+            distance: playerDistance,
+          });
         }
       }
       

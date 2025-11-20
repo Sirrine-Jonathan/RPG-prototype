@@ -466,6 +466,9 @@ export class ChatInterface {
 
     console.log(`📨 CONVO Player speaks: "${message}"`);
     Logger.getInstance().playerSpeech("Player", message);
+    
+    // Log what the player sees in the chat interface (their own message)
+    Logger.getInstance().playerUIChat("Player", message);
 
     // Show player speech bubble
     this.showPlayerSpeechBubble(message);
@@ -522,6 +525,9 @@ export class ChatInterface {
       timestamp: Date.now(),
     });
 
+    // Log what the player sees in the chat interface
+    Logger.getInstance().playerUIChat(data.speaker, data.message, { distance: data.distance });
+
     // Only log as player speech if it's actually the player
     if (data.speaker === "Player") {
       Logger.getInstance().playerSpeech(data.speaker, data.message);
@@ -541,6 +547,9 @@ export class ChatInterface {
       content: data.message,
       timestamp: data.timestamp,
     });
+
+    // Log what the player sees in the chat interface
+    Logger.getInstance().playerUIChat(data.speaker, data.message);
 
     // Only log as player speech if it's actually the player
     if (data.speaker === "Player") {
@@ -690,6 +699,9 @@ export class ChatInterface {
 
     if (currentScene && (currentScene as any).player) {
       const player = (currentScene as any).player;
+
+      // Log what the player sees in their own speech bubble
+      Logger.getInstance().playerUISpeechBubble("Player", message, { x: player.x, y: player.y });
 
       // Create temporary speech bubble for player
       const playerBubble = currentScene.add

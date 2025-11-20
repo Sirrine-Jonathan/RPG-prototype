@@ -1,5 +1,6 @@
 import { EventBus } from '../systems/EventBus';
 import { SpeechBubble } from './SpeechBubble';
+import { Logger } from '../utils/Logger';
 
 export class QuickSpeechUI {
     private container?: HTMLDivElement;
@@ -202,6 +203,9 @@ export class QuickSpeechUI {
         
         const message = this.textarea.value.trim();
         if (!message) return;
+
+        // Log player speech
+        Logger.getInstance().playerSpeech("Player", message);
 
         // Fire the same events as ChatInterface
         const eventBus = EventBus.getInstance();

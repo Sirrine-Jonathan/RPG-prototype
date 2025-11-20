@@ -4,6 +4,7 @@ import { SceneTransitionManager } from './SceneTransitionManager';
 import { ProximitySystem } from '../systems/ProximitySystem';
 import { EventBus } from '../systems/EventBus';
 import { PathfindingSystem } from '../systems/PathfindingSystem';
+import { WinConditionManager } from '../systems/WinConditionManager';
 
 export class GameManager {
   private static instance: GameManager;
@@ -14,6 +15,7 @@ export class GameManager {
   public proximitySystem: ProximitySystem;
   public eventBus: EventBus;
   public pathfindingSystem: PathfindingSystem;
+  public winConditionManager: WinConditionManager;
   
   private constructor() {
     this.entityManager = new EntityManager();
@@ -22,6 +24,7 @@ export class GameManager {
     this.proximitySystem = new ProximitySystem();
     this.eventBus = EventBus.getInstance();
     this.pathfindingSystem = new PathfindingSystem();
+    this.winConditionManager = WinConditionManager.getInstance();
     
     console.log('🎮 GameManager: Initialized with all systems');
   }

@@ -44,8 +44,8 @@ export class PersistentNPC extends BaseActor {
     | "hybrid"
     | "full_context" = "full_context";
   private readonly MAX_CONTEXT_ACTIONS = 3;
-  private readonly MIN_TIMEOUT = 15000; // 15 seconds minimum (normal)
-  private readonly MAX_TIMEOUT = 30000; // 30 seconds maximum (normal)
+  private readonly MIN_TIMEOUT = 8000; // 8 seconds minimum (reduced for responsiveness)
+  private readonly MAX_TIMEOUT = 18000; // 18 seconds maximum (reduced for responsiveness)
   private readonly INITIAL_MIN_TIMEOUT = 2000; // 2 seconds minimum (first action)
   private readonly INITIAL_MAX_TIMEOUT = 5000; // 5 seconds maximum (first action)
 
@@ -314,7 +314,7 @@ export class PersistentNPC extends BaseActor {
     } else if (eventType === "npc_speech_heard") {
       contextDescription = `${eventData.speakerName} said: "${eventData.message}" (${Math.round(eventData.distance)}px away). React appropriately.`;
     } else if (eventType === "timeout_prompt") {
-      contextDescription = `You haven't done anything for a while. Choose an action that fits your character.`;
+      contextDescription = `You haven't done anything recently. Consider speaking to nearby characters about Maya's case, sharing information, or asking questions to advance the investigation. Be proactive!`;
     } else if (eventType === "initial_approach") {
       contextDescription = `You just arrived in town and see the detective you hired over the phone. This is your first meeting. You have Maya's photo in your inventory and need to approach them immediately to give it to them and explain the case.`;
     }
@@ -861,11 +861,13 @@ ${spatialContext.join("\n")}
 INTERACTION RANGE: Objects within 48px for interaction, 150px for speech${recentActionsSection}
 
 BEHAVIORAL GUIDELINES:
-- Interact with the world naturally
-- Speak to nearby characters when appropriate
-- Move around naturally when no one is nearby
-- Stay in character and be helpful when approached
-- Avoid repetitive actions - vary your behavior`;
+- Be proactive in conversations - don't just wait for others to speak
+- Share relevant information about Maya's case when appropriate
+- Ask questions to advance the investigation
+- Speak to nearby characters frequently to build rapport
+- Move purposefully toward Detective Riley when you have information to share
+- Stay engaged in the mystery - this is urgent and important
+- Avoid repetitive actions - vary your behavior and responses`;
   }
 
   // Implement BaseActor abstract method
@@ -1125,6 +1127,60 @@ BEHAVIORAL GUIDELINES:
       });
     }
 
+    // Add story progression tools for Grace Sirrine
+    if (this.name === "Grace Sirrine") {
+      baseTools.push({
+        name: "give_mayas_photo",
+        description: "Give Maya's photo to Detective Riley - crucial evidence for the investigation",
+        parameters: {
+          type: "object",
+          properties: {},
+          required: [],
+        },
+        handler: async (params) => this.handleGiveMayasPhoto(),
+      });
+
+      baseTools.push({
+        name: "suggest_location",
+        description: "Suggest Detective Riley visit a specific location to continue the investigation",
+        parameters: {
+          type: "object",
+          properties: {
+            location: {
+              type: "string",
+              enum: ["police_station", "library", "school", "hospital"],
+              description: "Location to suggest visiting"
+            },
+            reason: {
+              type: "string", 
+              description: "Why this location is important for the investigation"
+            }
+          },
+          required: ["location", "reason"],
+        },
+        handler: async (params) => this.handleSuggestLocation(params.location, params.reason),
+      });
+    }
+
+    // Add evidence tools for NPCs in different locations
+    if (this.name.includes("Librarian") || this.currentScene?.scene.key === "NewLibraryScene") {
+      baseTools.push({
+        name: "give_library_clue",
+        description: "Give Detective Riley a clue found at the library about Maya",
+        parameters: { type: "object", properties: {}, required: [] },
+        handler: async (params) => this.handleGiveEvidence("library_clue", "Library Clue", "Maya was seen reading about local history before she disappeared. She seemed particularly interested in old town records.")
+      });
+    }
+
+    if (this.name.includes("Teacher") || this.currentScene?.scene.key === "SchoolScene") {
+      baseTools.push({
+        name: "give_school_clue", 
+        description: "Give Detective Riley information about Maya from the school",
+        parameters: { type: "object", properties: {}, required: [] },
+        handler: async (params) => this.handleGiveEvidence("school_clue", "School Clue", "Maya's teacher noticed she was asking questions about missing persons cases. She seemed worried about something.")
+      });
+    }
+
     return baseTools;
   }
 
@@ -1143,6 +1199,94 @@ BEHAVIORAL GUIDELINES:
     }
 
     return { success: true, message: `${this.name} following: ${follow}` };
+  }
+
+  // Story progression handlers
+  protected async handleGiveMayasPhoto(): Promise<{ success: boolean; message: string }> {
+    const inventory = InventorySystem.getInstance();
+    const gameManager = (globalThis as any).gameManager;
+    
+    // Add Maya's photo to Grace's inventory if not present
+    const graceInventory = inventory.getInventory(this.name);
+    const hasPhoto = graceInventory.some(item => item.id === "mayas_photo" || item.name.includes("Maya"));
+    
+    if (!hasPhoto) {
+      inventory.addItem(this.name, {
+        id: "mayas_photo",
+        name: "Maya's Photo",
+        description: "A recent photo of Maya showing her at the library entrance. This is crucial evidence.",
+        category: "Evidence"
+      });
+    }
+
+    // Give photo to Detective Riley
+    const success = inventory.transferItem(this.name, "Detective Riley", "mayas_photo");
+    
+    if (success) {
+      // Trigger story progression and win condition check
+      const storyManager = gameManager?.storyProgressManager;
+      if (storyManager) {
+        storyManager.completePuzzle("received_photo");
+      }
+
+      // Add to win condition manager
+      const winManager = gameManager?.winConditionManager;
+      if (winManager) {
+        winManager.addEvidence("mayas_photo");
+      }
+      
+      this.say("Here's Maya's photo, Detective. She was last seen at the library.");
+      return { success: true, message: "You gave Maya's photo to Detective Riley. This is crucial evidence for the investigation." };
+    } else {
+      return { success: false, message: "Could not give Maya's photo - Detective Riley not found nearby." };
+    }
+  }
+
+  protected async handleGiveEvidence(evidenceId: string, evidenceName: string, description: string): Promise<{ success: boolean; message: string }> {
+    const inventory = InventorySystem.getInstance();
+    const gameManager = (globalThis as any).gameManager;
+    
+    // Add evidence to NPC inventory
+    inventory.addItem(this.name, {
+      id: evidenceId,
+      name: evidenceName,
+      description: description,
+      category: "Evidence"
+    });
+
+    // Give to Detective Riley
+    const success = inventory.transferItem(this.name, "Detective Riley", evidenceId);
+    
+    if (success) {
+      // Add to win condition manager
+      const winManager = gameManager?.winConditionManager;
+      if (winManager) {
+        winManager.addEvidence(evidenceId);
+      }
+      
+      this.say(`Here's what I found about Maya: ${description}`);
+      return { success: true, message: `You received ${evidenceName} from ${this.name}` };
+    } else {
+      return { success: false, message: `Could not give ${evidenceName} - Detective Riley not found nearby.` };
+    }
+  }
+
+  protected async handleSuggestLocation(location: string, reason: string): Promise<{ success: boolean; message: string }> {
+    const gameManager = (globalThis as any).gameManager;
+    
+    // Create a portal/transition to the suggested location
+    this.say(`Detective, I suggest we go to the ${location}. ${reason}`);
+    
+    // Emit event for scene transition
+    if (gameManager?.eventBus) {
+      gameManager.eventBus.emit('location_suggested', {
+        location: location,
+        reason: reason,
+        suggestedBy: this.name
+      });
+    }
+    
+    return { success: true, message: `You suggested visiting the ${location}: ${reason}` };
   }
 
   // Start continuous following timer

@@ -108,48 +108,59 @@ export class NewLibraryScene extends NewGameplayScene {
   protected createSceneNPCs(): void {
     console.log(`📚 NewLibraryScene: Creating library NPCs...`);
     
-    // Create librarian who knew Maya
+    // Head Librarian - Key witness who helped Maya with research
     const librarian = this.gameManager.entityManager.createNPC('librarian_sarah', this, {
       id: 'librarian_sarah',
       name: 'Sarah Mills',
       spriteKey: 'amelia',
       x: 400,
       y: 200,
-      personality: 'Helpful librarian who remembers Maya',
-      background: 'Head librarian who helped Maya with her research into local folklore and missing persons cases',
-      goals: ['Help visitors find books', 'Share information about Maya\'s research interests']
+      personality: 'Knowledgeable and concerned librarian who remembers Maya well',
+      background: `Head librarian for 15 years. You helped Maya extensively with her research into local folklore, missing persons cases, and historical records. Maya was researching something about "whispering stones" and ancient town history before she disappeared. You're worried about her and want to help find her. You have access to restricted historical archives and remember specific books Maya requested.`,
+      goals: [
+        'Help Detective Riley understand what Maya was researching',
+        'Share information about Maya\'s frequent visits and research topics',
+        'Provide access to historical records Maya was studying',
+        'Express concern about other townspeople acting strangely lately'
+      ],
+      knowledge: [
+        'Maya was researching local folklore about stones with supernatural properties',
+        'She requested old town records, especially from the 1800s',
+        'Maya seemed frightened by something she found in the archives',
+        'Several other townspeople have been asking about similar historical topics recently',
+        'There are restricted books in the basement archives about local legends'
+      ]
     });
     
-    // Create book-seeking NPCs (no custom tools - they get tools from nearby objects)
-    const scholar = this.gameManager.entityManager.createNPC('scholar_marcus', this, {
-      id: 'scholar_marcus',
-      name: 'Marcus Reed',
-      spriteKey: 'amelia',
-      x: 200,
-      y: 180,
-      personality: 'Determined scholar',
-      background: 'Researcher seeking ancient texts',
-      goals: ['Find the "Chronicle of Shadows" book']
-    });
-    
+    // Local Historian - Knows about the town's dark history
     const historian = this.gameManager.entityManager.createNPC('historian_vera', this, {
       id: 'historian_vera',
       name: 'Vera Stone',
       spriteKey: 'amelia',
       x: 600,
       y: 300,
-      personality: 'Meticulous historian',
-      background: 'Local historian researching town records',
-      goals: ['Find the "Millbrook Town Records" book']
+      personality: 'Meticulous local historian with deep knowledge of town secrets',
+      background: `Retired history professor researching Millbrook's founding and early settlers. You know about the town's connection to ancient indigenous sites and the mysterious stone formations in the nearby caves. You've noticed patterns in historical disappearances that match recent events. You're suspicious of certain prominent townspeople and their "historical society" meetings.`,
+      goals: [
+        'Research the connection between historical and recent disappearances',
+        'Find evidence of the secret society\'s activities',
+        'Locate the "Chronicle of Shadows" - a book about the town\'s dark history',
+        'Warn Detective Riley about the danger they\'re investigating'
+      ],
+      knowledge: [
+        'The town was built near ancient stone circles with supposed supernatural properties',
+        'There have been cyclical disappearances every 20-30 years since the town\'s founding',
+        'A secret society has existed in town for generations, connected to the stones',
+        'The museum owner Mr. Arthur is likely involved in something sinister',
+        'The "Chronicle of Shadows" contains the truth about the stones and the society'
+      ]
     });
     
     this.gameManager.entityManager.addNPCToScene('librarian_sarah', this.scene.key);
-    this.gameManager.entityManager.addNPCToScene('scholar_marcus', this.scene.key);
     this.gameManager.entityManager.addNPCToScene('historian_vera', this.scene.key);
     
     console.log(`📚 NewLibraryScene: Created ${this.gameManager.entityManager.getNPCsForScene(this.scene.key).length} NPCs`);
     console.log(`📚 NewLibraryScene: Librarian at (${librarian.getPosition().x}, ${librarian.getPosition().y})`);
-    console.log(`📚 NewLibraryScene: Scholar at (${scholar.getPosition().x}, ${scholar.getPosition().y})`);
     console.log(`📚 NewLibraryScene: Historian at (${historian.getPosition().x}, ${historian.getPosition().y})`);
   }
   

@@ -56,8 +56,9 @@ export class NewLibraryScene extends NewGameplayScene {
     }
     
     // Position player if specified
-    if (this.loadedState.playerPosition && this.player) {
-      this.player.setPosition(this.loadedState.playerPosition.x, this.loadedState.playerPosition.y);
+    const player = this.gameManager.entityManager.getPlayer();
+    if (this.loadedState.playerPosition && player) {
+      player.setPosition(this.loadedState.playerPosition.x, this.loadedState.playerPosition.y);
       console.log(`📚 Positioned player at: ${this.loadedState.playerPosition.x}, ${this.loadedState.playerPosition.y}`);
     }
     

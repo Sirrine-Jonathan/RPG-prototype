@@ -1,5 +1,11 @@
 import { Logger, LogTag } from "../utils/Logger";
 
+export interface NPCTool {
+  name: string;
+  description: string;
+  parameters?: any;
+}
+
 export class AIService {
   private static instance: AIService;
   private logger = Logger.getInstance();

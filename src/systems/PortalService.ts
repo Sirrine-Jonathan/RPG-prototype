@@ -142,8 +142,8 @@ export class PortalService {
                 sourcePortalId: portal.id
             });
             
-            if (this.scene.shutdown) {
-                this.scene.shutdown();
+            if ((this.scene as any).shutdown) {
+                (this.scene as any).shutdown();
             }
             
             await new Promise(resolve => setTimeout(resolve, 50));

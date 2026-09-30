@@ -11,10 +11,12 @@ export interface LevelData {
     width: number;
     height: number;
     tileSize: number;
+    collision?: number[][];
+    objects?: LevelObject[];
     layers: {
-        [layerName: string]: LayerData;
-        collision: number[][];
-        objects: LevelObject[];
+        collision?: number[][];
+        objects?: LevelObject[];
+        [layerName: string]: any;
     };
 }
 

@@ -46,7 +46,7 @@ export class NewTownScene extends NewGameplayScene {
         width: levelData.width,
         height: levelData.height,
         tileSize: levelData.tileSize,
-        collision: levelData.collision,
+        collision: levelData.collision || levelData.layers?.collision,
       });
       console.log(
         `🗺️ NewTownScene: Boundary system initialized with ${levelData.width}x${levelData.height} tiles`

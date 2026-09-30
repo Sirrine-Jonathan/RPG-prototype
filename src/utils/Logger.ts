@@ -127,13 +127,13 @@ export class Logger {
     }
   }
 
-  private async flushToBackend(): void {
+  private async flushToBackend(): Promise<void> {
     if (this.logBuffer.length === 0) return;
 
-    try {
-      const logsToSend = [...this.logBuffer];
-      this.logBuffer = []; // Clear buffer
+    const logsToSend = [...this.logBuffer];
+    this.logBuffer = []; // Clear buffer
 
+    try {
       // Use fetch if available, otherwise skip backend logging
       if (typeof fetch !== "undefined") {
         await fetch(this.backendUrl, {

@@ -8,7 +8,6 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),
-        'npc-conversation': resolve(__dirname, 'sandbox/npc-conversation/index.html'),
         'level-editor': resolve(__dirname, 'sandbox/level-editor/index.html')
       }
     }

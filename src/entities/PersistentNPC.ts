@@ -1,4 +1,5 @@
 import { AIService } from "../services/AIService";
+import { offlineDialogue } from "../services/OfflineDialogue";
 import { SpeechBubble } from "../ui/SpeechBubble";
 import { ActionBubble } from "../ui/ActionBubble";
 import { BaseActor, Tool } from "./BaseActor";
@@ -468,8 +469,14 @@ export class PersistentNPC extends BaseActor {
           `[NPC_FLOW] ${this.name}: AI failed for event "${eventType}":`,
           error
         );
-        // No fallback actions - let failures be visible for development
-        chosenAction = "ai_failed";
+        const fallback = offlineDialogue(this.name, eventType, eventData.message);
+        if (fallback) {
+          this.logger.log(LogTag.AI_FALLBACK, "Using scripted player dialogue", this.name);
+          await this.handleSpeak(fallback);
+          chosenAction = "offline_speak";
+        } else {
+          chosenAction = "ai_failed";
+        }
       }
     }
 
@@ -578,7 +585,7 @@ export class PersistentNPC extends BaseActor {
         `[NPC_FLOW] ${this.name}: Player interaction AI failed:`,
         error
       );
-      this.say("Hello there!");
+      this.say(offlineDialogue(this.name, "initial_approach")!);
     }
   }
 

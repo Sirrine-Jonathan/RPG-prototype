@@ -62,6 +62,7 @@ export class Logger {
   private static instance: Logger;
   private logBuffer: LogEntry[] = [];
   private maxBufferSize = 1000;
+  private flushInProgress = false;
   private backendUrl = "http://localhost:3003/api/logs"; // Configurable
   private currentLogLevel = LogLevel.DEBUG;
 
@@ -128,27 +129,26 @@ export class Logger {
   }
 
   private async flushToBackend(): Promise<void> {
-    if (this.logBuffer.length === 0) return;
+    if (this.flushInProgress || this.logBuffer.length === 0 || typeof fetch === "undefined") return;
 
-    const logsToSend = [...this.logBuffer];
-    this.logBuffer = []; // Clear buffer
+    this.flushInProgress = true;
+    const logsToSend = this.logBuffer;
+    this.logBuffer = [];
 
     try {
-      // Use fetch if available, otherwise skip backend logging
-      if (typeof fetch !== "undefined") {
-        await fetch(this.backendUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ logs: logsToSend }),
-        });
-      }
+      const response = await fetch(this.backendUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ logs: logsToSend }),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!response.ok) throw new Error(`Log backend returned ${response.status}`);
     } catch (error) {
-      // Don't log this error to avoid infinite loops
+      // Preserve chronological order and keep the newest entries at capacity.
+      this.logBuffer = [...logsToSend, ...this.logBuffer].slice(-this.maxBufferSize);
       console.warn("Failed to send logs to backend:", error);
-      // Put logs back in buffer (but don't let it grow infinitely)
-      if (this.logBuffer.length < this.maxBufferSize / 2) {
-        this.logBuffer.unshift(...logsToSend);
-      }
+    } finally {
+      this.flushInProgress = false;
     }
   }
 

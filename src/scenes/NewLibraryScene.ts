@@ -15,7 +15,7 @@ export class NewLibraryScene extends NewGameplayScene {
     super({ key: 'NewLibraryScene' });
   }
   
-  init(data: any) {
+  init(data: any = {}) {
     this.loadedState = data.loadedState;
     console.log('📚 NewLibraryScene: Initialized with loaded state:', this.loadedState);
   }
@@ -70,6 +70,13 @@ export class NewLibraryScene extends NewGameplayScene {
     console.log(`🔍 NewLibraryScene: Level data:`, levelData);
     console.log(`🔍 NewLibraryScene: Found ${levelData?.layers?.objects?.length || 0} objects in level`);
     
+    if (levelData) {
+      this.gameManager.systemManager.boundarySystem.setLevelBounds({
+        width: levelData.width, height: levelData.height, tileSize: levelData.tileSize,
+        collision: levelData.collision || levelData.layers?.collision,
+      });
+    }
+
     if (levelData?.layers?.objects) {
       levelData.layers.objects.forEach((obj: any, index: number) => {
         console.log(`🔍 NewLibraryScene: Object ${index}:`, obj);
@@ -84,7 +91,7 @@ export class NewLibraryScene extends NewGameplayScene {
           });
         } else if (obj.type === 'spawn') {
           this.portalService.addSpawnPoint({
-            id: obj.id,
+            id: obj.properties?.spawnId || obj.id,
             x: obj.x * levelData.tileSize,
             y: obj.y * levelData.tileSize,
             isDefault: obj.subtype === 'portal' || obj.id === 'library_entrance_spawn'
@@ -93,6 +100,8 @@ export class NewLibraryScene extends NewGameplayScene {
       });
     }
     
+    this.applyPortalSpawn(this.portalService);
+
     // Create bookshelves
     this.createBookshelves();
     
@@ -103,6 +112,11 @@ export class NewLibraryScene extends NewGameplayScene {
   
   update() {
     super.update();
+    const player = this.gameManager.entityManager.getPlayer();
+    if (player && this.portalService) {
+      const position = player.getPosition();
+      this.portalService.checkPortalTriggers(position.x, position.y);
+    }
   }
   
   protected createSceneNPCs(): void {

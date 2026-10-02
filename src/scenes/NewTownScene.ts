@@ -65,13 +65,18 @@ export class NewTownScene extends NewGameplayScene {
       levelData.layers.objects.forEach((obj: any, index: number) => {
         console.log(`🔍 NewTownScene: Object ${index}:`, obj);
 
-        if (obj.type === "portal") {
+        if (obj.type === "portal" && obj.properties.targetScene === "LibraryScene") {
+          // Return outside the trigger radius to avoid immediately entering again.
+          this.portalService.addSpawnPoint({
+            id: "town_library", x: obj.x * levelData.tileSize + 96,
+            y: obj.y * levelData.tileSize,
+          });
           this.portalService.addPortal({
             id: obj.properties.portalId,
             x: obj.x * levelData.tileSize,
             y: obj.y * levelData.tileSize,
             targetScene: "NewLibraryScene", // Use new architecture scene
-            targetPortalId: obj.properties.targetPortalId,
+            targetPortalId: "library_entrance",
           });
         } else if (obj.type === "spawn") {
           this.portalService.addSpawnPoint({
@@ -96,6 +101,8 @@ export class NewTownScene extends NewGameplayScene {
       );
     }
 
+    this.applyPortalSpawn(this.portalService);
+
     const portals = this.portalService.getPortals();
     const spawns = this.portalService.getSpawnPoints();
     console.log(
@@ -105,6 +112,11 @@ export class NewTownScene extends NewGameplayScene {
 
   update() {
     super.update();
+    const player = this.gameManager.entityManager.getPlayer();
+    if (player && this.portalService) {
+      const position = player.getPosition();
+      this.portalService.checkPortalTriggers(position.x, position.y);
+    }
   }
 
   protected createSceneNPCs(): void {

@@ -7,6 +7,7 @@ import { QuickSpeechUI } from "../ui/QuickSpeechUI";
 export abstract class NewGameplayScene extends BaseScene {
   protected gameManager: GameManager;
   protected assetManager: AssetManager;
+  protected pendingPortalData?: PortalData;
   protected quickSpeechUI!: QuickSpeechUI;
   
   constructor(config: Phaser.Types.Scenes.SettingsConfig) {
@@ -21,6 +22,7 @@ export abstract class NewGameplayScene extends BaseScene {
 
   create(data?: { portalData?: PortalData }) {
     super.create();
+    this.pendingPortalData = data?.portalData;
     
     // Create player animations
     this.assetManager.createPlayerAnimations();
@@ -70,6 +72,14 @@ export abstract class NewGameplayScene extends BaseScene {
     this.createSceneNPCs();
   }
   
+  protected applyPortalSpawn(spawns: { getSpawnPoint(id: string): { x: number; y: number } | null; getDefaultSpawn(): { x: number; y: number } | null }): void {
+    const spawn = this.pendingPortalData
+      ? spawns.getSpawnPoint(this.pendingPortalData.targetPortalId) || spawns.getDefaultSpawn()
+      : spawns.getDefaultSpawn();
+    if (spawn) this.gameManager.entityManager.getPlayer()?.setPosition(spawn.x, spawn.y);
+    this.pendingPortalData = undefined;
+  }
+
   protected createSceneNPCs(): void {
     // Override in subclasses to create scene-specific NPCs
   }

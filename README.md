@@ -83,7 +83,8 @@ unit tests do not establish full gameplay or launch readiness.
 
 The production browser smoke check asserts new-game startup, keyboard movement,
 town/library entry and return, safe destination spawns, and town checkpoint
-position/inventory restoration after a page reload. It also fails on uncaught
+position/inventory restoration after a page reload, and removal of that checkpoint
+and its evidence when New Game is selected. It also fails on uncaught
 browser errors or missing assets and writes screenshots and `results.json`:
 
 ```bash

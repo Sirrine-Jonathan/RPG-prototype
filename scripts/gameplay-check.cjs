@@ -139,6 +139,22 @@ async function main() {
       assert.equal(saved.currentScene, fixture.currentScene);
       return saved;
     });
+    await check('new game clears a loaded checkpoint', async () => {
+      await page.reload();
+      await page.waitForFunction(() => window.game?.scene.isActive('MainMenuScene'));
+      await clickMenu('New Game');
+      await waitForLevel('NewTownScene');
+      const state = await page.evaluate(() => {
+        const previousCheckpoint = localStorage.getItem('whispering_stones_save');
+        const scene = window.game.scene.getScene('NewTownScene');
+        if (!scene.saveGameState()) throw new Error('New-game checkpoint write failed');
+        return { previousCheckpoint, saved: JSON.parse(localStorage.getItem('whispering_stones_save')) };
+      });
+      assert.equal(state.previousCheckpoint, null, 'New Game retained the previous checkpoint');
+      assert.deepEqual(state.saved.playerInventory, [], 'New Game retained synthetic evidence');
+      assert.equal(state.saved.currentScene, 'NewTownScene');
+      return state;
+    });
     await check('runtime and asset integrity', async () => {
       assert.deepEqual(evidence.errors, [], 'Uncaught browser errors');
       assert.deepEqual(evidence.missingAssets, [], 'Missing build assets');

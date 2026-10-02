@@ -188,8 +188,10 @@ export class NewTownScene extends NewGameplayScene {
 
       if (hasPhoto) {
         console.log("🏘️ Player received Maya's photo, auto-saving...");
-        this.saveGameState();
-        return; // Stop checking
+        if (this.saveGameState()) return;
+        // Storage may recover; retry slowly without interrupting gameplay.
+        this.time.delayedCall(30000, checkForPhoto);
+        return;
       }
 
       // Check again in 2 seconds
@@ -200,10 +202,10 @@ export class NewTownScene extends NewGameplayScene {
     this.time.delayedCall(5000, checkForPhoto);
   }
 
-  private saveGameState(): void {
+  private saveGameState(): boolean {
     const inventorySystem = InventorySystem.getInstance();
     const player = this.gameManager.entityManager.getPlayer();
-    if (!player) return;
+    if (!player) return false;
     const playerInventory = inventorySystem.getInventory(player.id);
 
     const gameState = {
@@ -218,8 +220,14 @@ export class NewTownScene extends NewGameplayScene {
       timestamp: new Date().toISOString(),
     };
 
-    localStorage.setItem("whispering_stones_save", JSON.stringify(gameState));
-    console.log("🏘️ Game state saved successfully");
+    try {
+      localStorage.setItem("whispering_stones_save", JSON.stringify(gameState));
+      console.log("🏘️ Game state saved successfully");
+      return true;
+    } catch (error) {
+      console.error("🏘️ Auto-save failed; progress was not saved", error);
+      return false;
+    }
   }
 
   protected getSceneWidth(): number {

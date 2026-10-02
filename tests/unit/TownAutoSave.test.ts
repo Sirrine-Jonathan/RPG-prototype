@@ -14,7 +14,7 @@ it('polls the persistent player inventory using scene-owned timers and stops aft
   inventory.mockReturnValueOnce([]).mockReturnValue([photo] as any);
   const callbacks: Array<() => void> = [];
   const delayedCall = vi.fn((_delay, callback) => callbacks.push(callback));
-  const saveGameState = vi.fn();
+  const saveGameState = vi.fn().mockReturnValue(true);
   const scene = { time: { delayedCall }, gameManager: { entityManager: {
     getPlayer: () => ({ id: 'Detective Riley' })
   } }, saveGameState };
@@ -65,4 +65,35 @@ it('serializes the photo from the same inventory used by item transfers', () => 
     (NewTownScene.prototype as any).restoreGameState.call(scene);
     expect(player.setPosition).not.toHaveBeenCalled();
   } finally { inventory.reset(); }
+});
+
+it('retries failed autosaves slowly and stops only after successful storage', () => {
+  vi.spyOn(InventorySystem.getInstance(), 'getInventory').mockReturnValue([{ id: "Maya's Photo" }] as any);
+  const callbacks: Array<() => void> = [];
+  const delayedCall = vi.fn((_delay, callback) => callbacks.push(callback));
+  const saveGameState = vi.fn().mockReturnValueOnce(false).mockReturnValue(true);
+  const scene = { time: { delayedCall }, gameManager: { entityManager: {
+    getPlayer: () => ({ id: 'Detective Riley' })
+  } }, saveGameState };
+  (NewTownScene.prototype as any).setupAutoSave.call(scene);
+  callbacks.shift()!();
+  expect(delayedCall.mock.calls[1][0]).toBe(30000);
+  callbacks.shift()!();
+  expect(saveGameState).toHaveBeenCalledTimes(2);
+  expect(callbacks).toHaveLength(0);
+});
+
+it('reports denied storage as a failed save without throwing or claiming success', () => {
+  const error = new Error('storage denied');
+  vi.stubGlobal('localStorage', { setItem: () => { throw error; } });
+  const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+  const report = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const result = (NewTownScene.prototype as any).saveGameState.call({ gameManager: { entityManager: {
+      getPlayer: () => ({ id: 'Detective Riley', getPosition: () => ({ x: 812, y: 640 }) })
+    } } });
+    expect(result).toBe(false);
+    expect(log).not.toHaveBeenCalled();
+    expect(report).toHaveBeenCalledWith('🏘️ Auto-save failed; progress was not saved', error);
+  } finally { vi.unstubAllGlobals(); }
 });

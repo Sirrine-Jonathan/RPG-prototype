@@ -1,4 +1,5 @@
 import { Scene } from "phaser";
+import { InventorySystem } from "../systems/InventorySystem";
 
 export class MainMenuScene extends Scene {
   constructor() {
@@ -66,6 +67,7 @@ export class MainMenuScene extends Scene {
     console.log("Starting new game...");
     // Clear any saved game state
     localStorage.removeItem('whispering_stones_save');
+    InventorySystem.getInstance().reset();
     this.scene.start("NewTownScene"); // Use new architecture
   }
 

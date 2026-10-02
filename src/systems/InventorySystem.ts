@@ -41,6 +41,10 @@ export class InventorySystem {
     this.inventories.set(actorId, items.map(item => ({ ...item })));
   }
 
+  reset(): void {
+    this.inventories.clear();
+  }
+
   hasItem(actorId: string, itemId: string): boolean {
     const inventory = this.inventories.get(actorId);
     return inventory ? inventory.some(item => item.id === itemId) : false;

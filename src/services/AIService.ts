@@ -6,6 +6,11 @@ export interface NPCTool {
   parameters?: any;
 }
 
+/** An in-process model runtime can implement this without any HTTP requests. */
+export interface LocalAIBackend {
+  complete(request: { model: string; messages: any[]; tools: any[]; stream: boolean; options: any }): Promise<{ message: any }>;
+}
+
 export class AIService {
   private static instance: AIService;
   private logger = Logger.getInstance();
@@ -17,7 +22,7 @@ export class AIService {
     return AIService.instance;
   }
 
-  constructor() {}
+  constructor(private readonly backend?: LocalAIBackend) {}
 
   async generateResponseWithTools(messages: any[], tools: any[]): Promise<any> {
     const npcName =
@@ -108,37 +113,40 @@ export class AIService {
         },
       };
 
-      console.log(`[LLM_DEBUG] ${npcName}: Making fetch request to Ollama...`);
-      const response = await fetch("http://localhost:11434/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
-        signal: AbortSignal.timeout(10000),
-      });
+      const data = this.backend
+        ? await this.backend.complete(requestBody)
+        : await (async () => {
+          console.log(`[LLM_DEBUG] ${npcName}: Making fetch request to Ollama...`);
+          const response = await fetch("http://localhost:11434/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(requestBody),
+            signal: AbortSignal.timeout(10000),
+          });
 
-      console.log(
-        `[LLM_DEBUG] ${npcName}: Fetch response status: ${response.status}`
-      );
+          console.log(
+            `[LLM_DEBUG] ${npcName}: Fetch response status: ${response.status}`
+          );
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(
-          `[LLM_DEBUG] ${npcName}: Response error text:`,
-          errorText
-        );
-        this.logger.error(
-          LogTag.LLM_INTERFACE,
-          `Response HTTP ${response.status}: ${errorText}`,
-          npcName
-        );
-        throw new Error(
-          `[${LogTag.LLM_INTERFACE}] HTTP ${response.status}: ${errorText}`
-        );
-      }
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error(
+              `[LLM_DEBUG] ${npcName}: Response error text:`,
+              errorText
+            );
+            this.logger.error(
+              LogTag.LLM_INTERFACE,
+              `Response HTTP ${response.status}: ${errorText}`,
+              npcName
+            );
+            throw new Error(
+              `[${LogTag.LLM_INTERFACE}] HTTP ${response.status}: ${errorText}`
+            );
+          }
 
-      console.log(`[LLM_DEBUG] ${npcName}: Parsing JSON response...`);
-      const data = await response.json();
-      console.log(`[LLM_DEBUG] ${npcName}: JSON parsed successfully`);
+          console.log(`[LLM_DEBUG] ${npcName}: Parsing JSON response...`);
+          return await response.json();
+        })();
 
       // An empty or malformed successful HTTP response must trigger the same
       // recovery path as a connection failure, rather than silently stalling.

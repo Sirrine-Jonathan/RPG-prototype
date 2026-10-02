@@ -158,3 +158,24 @@ npm test         # Run tests
 - All services stop together with Ctrl+C
 
 Built with TypeScript, Phaser 3, and modern web technologies.
+
+## Bundled inference groundwork
+
+`AIService` accepts an optional `LocalAIBackend` with a `complete(request)` method
+returning `{ message }`. In-process runtimes bypass the Ollama HTTP request and
+share response validation and error propagation with it. The default singleton
+still uses Ollama. No inference engine or model weights are bundled yet.
+Backends must impose their own loading/generation deadline and run expensive
+inference off the UI thread. Unit tests verify no AI HTTP request, tool delivery,
+malformed output rejection and runtime failure propagation for this interface.
+
+`WorkerAIBackend` provides the transport for a dedicated inference worker. It
+sends `{ type: 'complete', id, request }`; the runtime worker must reply with
+`{ type: 'result', id, result: { message } }` or `{ type: 'error', id, error }`.
+Replies are correlated across concurrent requests. Worker crashes, decoding
+errors and the configurable deadline reject pending calls; a deadline terminates
+the worker so stalled generation cannot keep consuming resources. Create a new
+backend after termination. Call `dispose()` when leaving the game. This bridge
+is not an inference runtime and is not enabled in the default game singleton.
+Model loading must be completed separately or included in an explicitly chosen
+longer deadline; no automatic model download or licensed weights are included.

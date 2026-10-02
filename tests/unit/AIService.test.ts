@@ -63,3 +63,24 @@ it('aborts a stalled local AI request and rejects so NPC fallback can run', asyn
   await rejection;
   expect(AbortSignal.timeout).toHaveBeenCalledWith(10000);
 });
+
+
+it('uses an in-process backend without calling fetch and preserves NPC tools', async () => {
+  const fetchMock = vi.fn();
+  vi.stubGlobal('fetch', fetchMock);
+  const message = { content: null, tool_calls: [{ function: { name: 'speak', arguments: { text: 'Hello locally' } } }] };
+  const complete = vi.fn().mockResolvedValue({ message });
+  const tools = [{ function: { name: 'speak' } }];
+  const result = await new AIService({ complete }).generateResponseWithTools([{ role: 'user', content: 'Hello' }], tools);
+  expect(result).toEqual(message);
+  expect(complete).toHaveBeenCalledWith(expect.objectContaining({ tools, messages: [{ role: 'user', content: 'Hello' }], stream: false }));
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+it('rejects malformed in-process model output so NPC fallback can run', async () => {
+  await expect(new AIService({ complete: async () => ({ message: {} }) }).generateResponseWithTools([], [])).rejects.toThrow('Invalid response from local AI');
+});
+
+it('propagates in-process runtime failure so NPC fallback can run', async () => {
+  await expect(new AIService({ complete: async () => { throw new Error('Model unavailable'); } }).generateResponseWithTools([], [])).rejects.toThrow('Model unavailable');
+});

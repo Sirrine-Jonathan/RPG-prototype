@@ -81,6 +81,10 @@ movement, chat focus, level boundaries, inventory transfers, and NPC indicators.
 Retired sandbox tests are archived as reference, not counted as passing. These
 unit tests do not establish full gameplay or launch readiness.
 
+NPC event-processing regressions verify that plain AI replies reach the speech
+handler, tool replies speak once, and failed AI requests use scripted player
+dialogue without answering other NPCs.
+
 The production browser smoke check asserts new-game startup, keyboard movement,
 town/library entry and return, safe destination spawns, and town checkpoint
 position/inventory restoration after a page reload, and removal of that checkpoint

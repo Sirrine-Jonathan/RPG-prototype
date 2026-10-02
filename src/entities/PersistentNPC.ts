@@ -455,11 +455,14 @@ export class PersistentNPC extends BaseActor {
 
             this.logger.llmToolResult(this.name, functionName, toolResult);
           } else if (response.content) {
-            // Add assistant message without tool calls
+            // Plain dialogue must reach the same speech UI and event bus as
+            // the speak tool, rather than only appearing in AI history.
             this.messages.push({
               role: "assistant",
               content: response.content
             });
+            await this.handleSpeak(response.content);
+            chosenAction = "speak";
           }
         } finally {
           // Always clear the pending request

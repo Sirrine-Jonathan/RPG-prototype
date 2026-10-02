@@ -25,3 +25,21 @@ it('passes an existing library save through without replacing its inventory', ()
   expect(storage.removeItem).not.toHaveBeenCalled();
   expect(storage.setItem).not.toHaveBeenCalled();
 });
+
+it.each([
+  'null', '{broken',
+  JSON.stringify({ currentScene: 'MissingScene', playerPosition: { x: 1, y: 2 }, playerInventory: [] }),
+  JSON.stringify({ currentScene: 'NewTownScene', playerPosition: { x: 1, y: 2 }, playerInventory: [] }),
+  JSON.stringify({ currentScene: 'NewLibraryScene', playerPosition: { x: '1', y: 2 }, playerInventory: [] }),
+  JSON.stringify({ currentScene: 'NewLibraryScene', playerPosition: { x: 1, y: 2 }, playerInventory: {} }),
+  JSON.stringify({ currentScene: 'NewLibraryScene', playerPosition: { x: 1, y: 2 }, playerInventory: [null] }),
+])('starts a new game safely for invalid save %s', (raw) => {
+  const storage = { getItem: () => raw, removeItem: vi.fn() };
+  vi.stubGlobal('localStorage', storage);
+  const menu = new MainMenuScene();
+  menu.scene = { start: vi.fn() } as any;
+  menu.loadGame();
+  expect(menu.scene.start).toHaveBeenCalledTimes(1);
+  expect(menu.scene.start).toHaveBeenCalledWith('NewTownScene');
+  expect(storage.removeItem).toHaveBeenCalledWith('whispering_stones_save');
+});

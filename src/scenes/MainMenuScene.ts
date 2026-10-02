@@ -78,6 +78,17 @@ export class MainMenuScene extends Scene {
     if (savedGame) {
       try {
         const gameState = JSON.parse(savedGame);
+        // Library is the only scene that currently restores saved state.
+        if (!gameState || gameState.currentScene !== 'NewLibraryScene' ||
+            !gameState.playerPosition ||
+            !Number.isFinite(gameState.playerPosition.x) ||
+            !Number.isFinite(gameState.playerPosition.y) ||
+            !Array.isArray(gameState.playerInventory) ||
+            !gameState.playerInventory.every((item: any) => item &&
+              typeof item.id === 'string' && typeof item.name === 'string' &&
+              typeof item.description === 'string')) {
+          throw new Error('Unsupported or invalid saved game');
+        }
         console.log("Loading saved game state:", gameState);
         
         // Start the saved scene

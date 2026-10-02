@@ -4,6 +4,7 @@ import { HistorianNPC } from "../entities/HistorianNPC";
 import { ScholarNPC } from "../entities/ScholarNPC";
 import { CouncilLeaderNPC } from "../entities/CouncilLeaderNPC";
 import { AssistantNPC } from "../entities/AssistantNPC";
+import { LibrarianNPC } from "../entities/LibrarianNPC";
 
 export class EntityManager {
   private player: PersistentPlayer | null = null;
@@ -44,7 +45,9 @@ export class EntityManager {
   ): PersistentNPC {
     // Create specific NPC types - each is a singleton
     let npc: PersistentNPC;
-    if (id === "historian_vera") {
+    if (id === "librarian_sarah") {
+      npc = LibrarianNPC.getInstance(scene, config);
+    } else if (id === "historian_vera") {
       npc = HistorianNPC.getInstance(scene, config);
     } else if (id === "scholar_marcus") {
       npc = ScholarNPC.getInstance(scene, config);

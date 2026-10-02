@@ -143,9 +143,9 @@ export class NewLibraryScene extends NewGameplayScene {
       goals: ['Find the "Millbrook Town Records" book']
     });
     
-    this.gameManager.entityManager.addNPCToScene('librarian_sarah', this.scene.key);
-    this.gameManager.entityManager.addNPCToScene('scholar_marcus', this.scene.key);
-    this.gameManager.entityManager.addNPCToScene('historian_vera', this.scene.key);
+    this.gameManager.entityManager.addNPCToScene(librarian.id, this.scene.key);
+    this.gameManager.entityManager.addNPCToScene(scholar.id, this.scene.key);
+    this.gameManager.entityManager.addNPCToScene(historian.id, this.scene.key);
     
     console.log(`📚 NewLibraryScene: Created ${this.gameManager.entityManager.getNPCsForScene(this.scene.key).length} NPCs`);
     console.log(`📚 NewLibraryScene: Librarian at (${librarian.getPosition().x}, ${librarian.getPosition().y})`);

@@ -28,6 +28,8 @@ export class PersistentNPC extends BaseActor {
   private shouldInterruptLoop: boolean = false; // Flag to interrupt current loop
   private conversationHistory: any[] = []; // Legacy - will be replaced
   private messages: any[] = []; // New message-based context
+  private speechEventBus?: EventBus;
+  private speechListener?: (event: any) => void;
   private logger = Logger.getInstance();
 
   // Following behavior
@@ -78,9 +80,11 @@ export class PersistentNPC extends BaseActor {
     const gameManager = (globalThis as any).gameManager;
     if (gameManager && gameManager.eventBus) {
       // Listen for speech events from other NPCs
-      gameManager.eventBus.subscribe("npc_speech", (event: any) => {
+      this.speechEventBus = gameManager.eventBus;
+      this.speechListener = (event: any) => {
         this.handleSpeechEvent(event.data);
-      });
+      };
+      this.speechEventBus!.subscribe("npc_speech", this.speechListener);
       
       // Note: player_speech events are handled by ProximitySystem calling triggerEvent
       // No need to subscribe directly to avoid duplicate events
@@ -1388,6 +1392,11 @@ BEHAVIORAL GUIDELINES:
   }
 
   public destroy(): void {
+    if (this.speechEventBus && this.speechListener) {
+      this.speechEventBus.unsubscribe("npc_speech", this.speechListener);
+      this.speechEventBus = undefined;
+      this.speechListener = undefined;
+    }
     if (this.sprite) {
       this.sprite.destroy();
       this.nameText?.destroy();

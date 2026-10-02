@@ -81,6 +81,25 @@ movement, chat focus, level boundaries, inventory transfers, and NPC indicators.
 Retired sandbox tests are archived as reference, not counted as passing. These
 unit tests do not establish full gameplay or launch readiness.
 
+The production browser smoke check asserts new-game startup, keyboard movement,
+town/library entry and return, safe destination spawns, and town checkpoint
+position/inventory restoration after a page reload. It also fails on uncaught
+browser errors or missing assets and writes screenshots and `results.json`:
+
+```bash
+# Requires Playwright and its Chromium installation in your test environment.
+node scripts/gameplay-check.cjs dist /path/to/gameplay-evidence
+```
+
+The check uses a fresh browser context, intercepts requests to serve the build
+and this checkout's `public/` assets, and blocks external requests including
+Ollama. It needs no listening server or personal browser profile. Portal entry
+uses test teleports and checkpoint loading uses a synthetic inventory item;
+these checks do not validate walkable portal routes, full dialogue, photo
+acquisition, or story completion. Expected offline-service console errors are
+recorded separately. A Chromium launch failure is recorded as
+`blocked-before-gameplay`, with a nonzero exit code and no passing checks.
+
 ```bash
 npm run build    # Build for production
 npm run preview  # Preview production build

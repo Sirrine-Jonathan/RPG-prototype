@@ -94,6 +94,26 @@ node node_modules/vite/bin/vite.js build --outDir build-gameplay-review
 node scripts/gameplay-check.cjs build-gameplay-review /path/to/gameplay-evidence
 ```
 
+For a worker that cannot use the default npm cache, install the browser tooling
+into a separate directory inside its writable workspace. From the workspace
+root (the directory containing `repos/`):
+
+```bash
+npm install --prefix tools/rpg-browser --cache tools/npm-cache --no-audit --no-fund playwright@1.63.0
+export PLAYWRIGHT_BROWSERS_PATH="$PWD/tools/rpg-browser/browsers"
+node tools/rpg-browser/node_modules/playwright/cli.js install chromium
+NODE_PATH="$PWD/tools/rpg-browser/node_modules" DEBUG=pw:browser node repos/RPG-prototype/scripts/gameplay-check.cjs repos/RPG-prototype/build-gameplay-review artifacts/rpg-browser-check > artifacts/rpg-browser-launch.log 2>&1
+```
+
+Verify the installer exit code as well as the harness result. Downloaded binaries
+alone do not prove installation or browser startup succeeded. `DEBUG=pw:browser`
+preserves the native launch diagnostics in the log when the summarized JSON
+only reports that the browser closed. This macOS worker currently fails before
+page creation with `required built-in appearance SystemAppearance not found`;
+installing Playwright resolved module discovery but did not resolve that native
+browser failure. Run the check in a Chromium-capable environment before claiming
+any browser gameplay coverage.
+
 The check uses a fresh browser context, intercepts requests to serve the build
 only; missing assets cannot fall back to this checkout's `public/` directory.
 It blocks external requests including Ollama. It needs no listening server or personal browser profile. Portal entry

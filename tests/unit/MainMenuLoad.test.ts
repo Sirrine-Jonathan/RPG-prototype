@@ -82,3 +82,16 @@ it.each(['new', 'load'])('starts town with clean inventory when %s game storage 
     expect(inventory.getInventory('Detective Riley')).toEqual([]);
   } finally { inventory.reset(); }
 });
+
+
+it('preserves a valid checkpoint and avoids a second transition when scene startup fails', () => {
+  const save = { currentScene: 'NewTownScene', playerInventory: [], playerPosition: { x: 250, y: 200 } };
+  const storage = { getItem: () => JSON.stringify(save), removeItem: vi.fn() };
+  vi.stubGlobal('localStorage', storage);
+  const menu = new MainMenuScene();
+  const failure = new Error('Scene startup failed');
+  menu.scene = { start: vi.fn(() => { throw failure; }) } as any;
+  expect(() => menu.loadGame()).toThrow(failure);
+  expect(menu.scene.start).toHaveBeenCalledTimes(1);
+  expect(storage.removeItem).not.toHaveBeenCalled();
+});

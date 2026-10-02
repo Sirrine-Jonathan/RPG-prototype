@@ -89,8 +89,9 @@ export class MainMenuScene extends Scene {
     }
     
     if (savedGame) {
+      let gameState: any;
       try {
-        const gameState = JSON.parse(savedGame);
+        gameState = JSON.parse(savedGame);
         // Only these gameplay scenes support checkpoint restoration.
         if (!gameState || !['NewLibraryScene', 'NewTownScene'].includes(gameState.currentScene) ||
             !gameState.playerPosition ||
@@ -102,15 +103,14 @@ export class MainMenuScene extends Scene {
               typeof item.description === 'string')) {
           throw new Error('Unsupported or invalid saved game');
         }
-        console.log("Loading saved game state:", gameState);
-        
-        // Start the saved scene
-        this.scene.start(gameState.currentScene, { loadedState: gameState });
       } catch (error) {
         console.error("Failed to load game:", error);
         // Fallback to new game
         this.startNewGame();
+        return;
       }
+      // Scene startup failures must not erase a valid checkpoint.
+      this.scene.start(gameState.currentScene, { loadedState: gameState });
     } else {
       console.log("No saved game found, starting a new game...");
       this.startNewGame();

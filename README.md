@@ -87,13 +87,16 @@ position/inventory restoration after a page reload. It also fails on uncaught
 browser errors or missing assets and writes screenshots and `results.json`:
 
 ```bash
+# Build into a separate directory to preserve existing build output.
+node node_modules/typescript/bin/tsc --noEmit
+node node_modules/vite/bin/vite.js build --outDir build-gameplay-review
 # Requires Playwright and its Chromium installation in your test environment.
-node scripts/gameplay-check.cjs dist /path/to/gameplay-evidence
+node scripts/gameplay-check.cjs build-gameplay-review /path/to/gameplay-evidence
 ```
 
 The check uses a fresh browser context, intercepts requests to serve the build
-and this checkout's `public/` assets, and blocks external requests including
-Ollama. It needs no listening server or personal browser profile. Portal entry
+only; missing assets cannot fall back to this checkout's `public/` directory.
+It blocks external requests including Ollama. It needs no listening server or personal browser profile. Portal entry
 uses test teleports and checkpoint loading uses a synthetic inventory item;
 these checks do not validate walkable portal routes, full dialogue, photo
 acquisition, or story completion. Expected offline-service console errors are

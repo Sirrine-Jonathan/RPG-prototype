@@ -5,7 +5,6 @@ const path = require('node:path');
 
 const root = path.resolve(process.argv[2] || 'dist');
 const output = path.resolve(process.argv[3] || 'gameplay-evidence');
-const publicRoot = path.resolve(__dirname, '../public');
 const evidence = { status: 'running', checks: [], errors: [], consoleErrors: [], missingAssets: [] };
 
 async function main() {
@@ -22,16 +21,14 @@ async function main() {
     page.on('console', message => {
       if (message.type() === 'error') evidence.consoleErrors.push(message.text());
     });
-    // Serve only build files and public assets. Block all external services,
+    // Serve only the selected production build. Block all external services,
     // including Ollama, to keep this check offline and free of API charges.
     await page.route('**/*', async route => {
       const url = new URL(route.request().url());
       if (url.hostname !== 'rpg.test') return route.abort();
       const relative = decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname);
       if (relative.split('/').some(part => part.startsWith('.'))) return route.abort();
-      const roots = relative.startsWith('/assets/') || relative.startsWith('/levels/')
-        ? [root, publicRoot] : [root];
-      for (const directory of roots) {
+      for (const directory of [root]) {
         const file = path.resolve(directory, '.' + relative);
         if (!file.startsWith(directory + path.sep)) continue;
         try {

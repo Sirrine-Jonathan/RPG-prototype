@@ -99,6 +99,19 @@ node node_modules/vite/bin/vite.js build --outDir build-gameplay-review
 node scripts/gameplay-check.cjs build-gameplay-review /path/to/gameplay-evidence
 ```
 
+Set `RPG_BROWSER=firefox` or `RPG_BROWSER=webkit` to run the same checks
+with another installed Playwright browser. Chromium remains the default;
+`results.json` records the selected engine. Use a separate browser download
+directory if a previous installer left an inaccessible lock:
+
+```bash
+PLAYWRIGHT_BROWSERS_PATH="$PWD/tools/rpg-firefox/browsers" node tools/rpg-browser/node_modules/playwright/cli.js install firefox
+NODE_PATH="$PWD/tools/rpg-browser/node_modules" PLAYWRIGHT_BROWSERS_PATH="$PWD/tools/rpg-firefox/browsers" RPG_BROWSER=firefox node repos/RPG-prototype/scripts/gameplay-check.cjs repos/RPG-prototype/build-resume-validation artifacts/rpg-firefox-check
+```
+
+These alternative-browser commands run from the workspace root. A pass covers
+only the engine reported in the evidence; it does not establish Chromium compatibility.
+
 For a worker that cannot use the default npm cache, install the browser tooling
 into a separate directory inside its writable workspace. From the workspace
 root (the directory containing `repos/`):
@@ -116,8 +129,11 @@ preserves the native launch diagnostics in the log when the summarized JSON
 only reports that the browser closed. This macOS worker currently fails before
 page creation with `required built-in appearance SystemAppearance not found`;
 installing Playwright resolved module discovery but did not resolve that native
-browser failure. Run the check in a Chromium-capable environment before claiming
-any browser gameplay coverage.
+browser failure. Firefox and WebKit were also attempted in this worker; both
+abort before page creation. Their installers download binaries but exit with
+EPERM while removing the workspace lock. Alternative engines have not resolved
+local gameplay validation. Run the check in a working browser environment before
+claiming any browser gameplay coverage.
 
 The check uses a fresh browser context, intercepts requests to serve the build
 only; missing assets cannot fall back to this checkout's `public/` directory.

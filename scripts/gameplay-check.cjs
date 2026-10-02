@@ -5,15 +5,19 @@ const path = require('node:path');
 
 const root = path.resolve(process.argv[2] || 'dist');
 const output = path.resolve(process.argv[3] || 'gameplay-evidence');
-const evidence = { status: 'running', checks: [], errors: [], consoleErrors: [], missingAssets: [] };
+const browserName = process.env.RPG_BROWSER || 'chromium';
+const evidence = { status: 'running', browser: browserName, checks: [], errors: [], consoleErrors: [], missingAssets: [] };
 
 async function main() {
   let browser;
   let phase = 'browser-launch';
   await fs.mkdir(output, { recursive: true });
   try {
-    const { chromium } = require('playwright');
-    browser = await chromium.launch({ headless: true });
+    if (!['chromium', 'firefox', 'webkit'].includes(browserName)) {
+      throw new Error('RPG_BROWSER must be chromium, firefox, or webkit');
+    }
+    const browserType = require('playwright')[browserName];
+    browser = await browserType.launch({ headless: true });
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     const page = await context.newPage();
     page.setDefaultTimeout(15000);

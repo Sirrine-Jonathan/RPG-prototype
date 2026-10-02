@@ -80,8 +80,8 @@ export class MainMenuScene extends Scene {
     if (savedGame) {
       try {
         const gameState = JSON.parse(savedGame);
-        // Library is the only scene that currently restores saved state.
-        if (!gameState || gameState.currentScene !== 'NewLibraryScene' ||
+        // Only these gameplay scenes support checkpoint restoration.
+        if (!gameState || !['NewLibraryScene', 'NewTownScene'].includes(gameState.currentScene) ||
             !gameState.playerPosition ||
             !Number.isFinite(gameState.playerPosition.x) ||
             !Number.isFinite(gameState.playerPosition.y) ||

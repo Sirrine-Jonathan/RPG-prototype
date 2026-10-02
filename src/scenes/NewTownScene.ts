@@ -9,9 +9,21 @@ import { InventorySystem } from "../systems/InventorySystem";
 export class NewTownScene extends NewGameplayScene {
   private levelLoader!: LevelLoader;
   private portalService!: PortalService;
+  private loadedState: any = null;
 
   constructor() {
     super({ key: "NewTownScene" });
+  }
+
+  init(data: any = {}) {
+    this.loadedState = data.loadedState || null;
+  }
+
+  private restoreGameState(): void {
+    const player = this.gameManager.entityManager.getPlayer();
+    if (!player || !this.loadedState) return;
+    InventorySystem.getInstance().replaceInventory(player.id, this.loadedState.playerInventory);
+    player.setPosition(this.loadedState.playerPosition.x, this.loadedState.playerPosition.y);
   }
 
   protected loadSceneContent(): void {
@@ -26,6 +38,7 @@ export class NewTownScene extends NewGameplayScene {
         console.log(`🏘️ NewTownScene: Town level loaded`);
         this.setupPortalsAndSpawns();
         this.createSceneNPCs();
+        this.restoreGameState();
 
         // Set up auto-save when player gets Maya's photo
         this.setupAutoSave();
@@ -194,8 +207,8 @@ export class NewTownScene extends NewGameplayScene {
     const playerInventory = inventorySystem.getInventory(player.id);
 
     const gameState = {
-      currentScene: "NewLibraryScene",
-      playerPosition: { x: 400, y: 300 }, // Default library position
+      currentScene: "NewTownScene",
+      playerPosition: player.getPosition(),
       playerInventory: playerInventory,
       gameProgress: {
         metMargaret: true,

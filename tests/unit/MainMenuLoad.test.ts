@@ -36,14 +36,14 @@ it('starts town without creating evidence or a checkpoint when there is no save'
   expect(storage.setItem).not.toHaveBeenCalled();
 });
 
-it('passes an existing library save through without replacing its inventory', () => {
-  const save = { currentScene: 'NewLibraryScene', playerInventory: [], playerPosition: { x: 250, y: 200 } };
+it.each(['NewLibraryScene', 'NewTownScene'])('passes an existing %s save through without replacing its inventory', (currentScene) => {
+  const save = { currentScene, playerInventory: [], playerPosition: { x: 250, y: 200 } };
   const storage = { getItem: () => JSON.stringify(save), removeItem: vi.fn(), setItem: vi.fn() };
   vi.stubGlobal('localStorage', storage);
   const menu = new MainMenuScene();
   menu.scene = { start: vi.fn() } as any;
   menu.loadGame();
-  expect(menu.scene.start).toHaveBeenCalledWith('NewLibraryScene', { loadedState: save });
+  expect(menu.scene.start).toHaveBeenCalledWith(currentScene, { loadedState: save });
   expect(storage.removeItem).not.toHaveBeenCalled();
   expect(storage.setItem).not.toHaveBeenCalled();
 });
@@ -51,7 +51,6 @@ it('passes an existing library save through without replacing its inventory', ()
 it.each([
   'null', '{broken',
   JSON.stringify({ currentScene: 'MissingScene', playerPosition: { x: 1, y: 2 }, playerInventory: [] }),
-  JSON.stringify({ currentScene: 'NewTownScene', playerPosition: { x: 1, y: 2 }, playerInventory: [] }),
   JSON.stringify({ currentScene: 'NewLibraryScene', playerPosition: { x: '1', y: 2 }, playerInventory: [] }),
   JSON.stringify({ currentScene: 'NewLibraryScene', playerPosition: { x: 1, y: 2 }, playerInventory: {} }),
   JSON.stringify({ currentScene: 'NewLibraryScene', playerPosition: { x: 1, y: 2 }, playerInventory: [null] }),

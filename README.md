@@ -27,7 +27,6 @@ npm run dev:editor   # Level Editor backend (port 3001)
 
 - **Main Game**: http://localhost:4200
 - **Level Editor**: http://localhost:4200/sandbox/level-editor/
-- **NPC Sandbox**: http://localhost:4200/sandbox/npc-conversation/
 - **Ollama API**: http://localhost:11434
 
 ## 🛠️ Development Tools
@@ -39,11 +38,9 @@ Professional visual level creation tool:
 - Multi-layer editing (background, collision, objects)
 - Object placement (NPCs, interactive items, spawn points)
 
-### NPC Sandbox
-Test AI-driven NPC interactions:
-- Dynamic NPC-to-NPC conversations
-- Personality-based dialogue
-- Topic-driven discussions
+The old NPC conversation sandbox has been retired. NPC behavior now lives in
+the main game; historical sandbox tests are preserved in
+[docs/legacy-sandbox-tests](docs/legacy-sandbox-tests/README.md).
 
 ## 📁 Project Structure
 
@@ -57,7 +54,6 @@ src/                    # Main game source
 
 sandbox/               # Development tools
 ├── level-editor/      # Visual level creation tool
-└── npc-conversation/  # NPC interaction testing
 
 levels/                # Game levels (JSON)
 public/assets/         # Game assets (auto-scanned)
@@ -72,6 +68,18 @@ public/assets/         # Game assets (auto-scanned)
 - **Professional Development Tools**
 
 ## 🔧 Build & Deploy
+
+If local Ollama fails or does not respond within 10 seconds, NPCs use clearly
+identified scripted greetings and replies to player speech. These replies do
+not invent clues or perform game actions. Offline NPCs ignore other NPC speech
+and idle prompts to prevent automatic reply loops. This is a limited fallback,
+not a replacement for AI dialogue; a complete gameplay walkthrough is still needed.
+
+Run the full active suite with `node node_modules/vitest/vitest.mjs run`.
+It covers AI delivery and offline dialogue, logger recovery, keyboard/click
+movement, chat focus, level boundaries, inventory transfers, and NPC indicators.
+Retired sandbox tests are archived as reference, not counted as passing. These
+unit tests do not establish full gameplay or launch readiness.
 
 ```bash
 npm run build    # Build for production

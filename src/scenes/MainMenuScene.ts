@@ -88,29 +88,8 @@ export class MainMenuScene extends Scene {
         this.startNewGame();
       }
     } else {
-      console.log("No saved game found, creating library test save...");
-      // Create a test save state for library scene
-      const testSave = {
-        currentScene: 'NewLibraryScene',
-        playerPosition: { x: 400, y: 300 },
-        playerInventory: [
-          {
-            id: "Maya's Photo",
-            name: "Maya's Photo",
-            description: "A recent photo of Maya, the missing person. She appears to be a young woman with dark hair, smiling at the camera. In the background, you can clearly see the town library's distinctive arched entrance. Maya is holding what looks like an old book or journal.",
-            category: 'evidence'
-          }
-        ],
-        gameProgress: {
-          metMargaret: true,
-          hasPhoto: true,
-          currentObjective: 'investigate_library'
-        }
-      };
-      
-      // Save and load the test state
-      localStorage.setItem('whispering_stones_save', JSON.stringify(testSave));
-      this.scene.start('NewLibraryScene', { loadedState: testSave });
+      console.log("No saved game found, starting a new game...");
+      this.startNewGame();
     }
   }
 }

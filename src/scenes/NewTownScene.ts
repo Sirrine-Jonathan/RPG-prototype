@@ -167,7 +167,8 @@ export class NewTownScene extends NewGameplayScene {
 
     // Check periodically if player has Maya's photo (simple approach)
     const checkForPhoto = () => {
-      const playerInventory = inventorySystem.getInventory("player");
+      const player = this.gameManager.entityManager.getPlayer();
+      const playerInventory = player ? inventorySystem.getInventory(player.id) : [];
       const hasPhoto = playerInventory.some(
         (item) => item.id === "Maya's Photo"
       );
@@ -179,16 +180,18 @@ export class NewTownScene extends NewGameplayScene {
       }
 
       // Check again in 2 seconds
-      setTimeout(checkForPhoto, 2000);
+      this.time.delayedCall(2000, checkForPhoto);
     };
 
     // Start checking after a short delay
-    setTimeout(checkForPhoto, 5000);
+    this.time.delayedCall(5000, checkForPhoto);
   }
 
   private saveGameState(): void {
     const inventorySystem = InventorySystem.getInstance();
-    const playerInventory = inventorySystem.getInventory("player");
+    const player = this.gameManager.entityManager.getPlayer();
+    if (!player) return;
+    const playerInventory = inventorySystem.getInventory(player.id);
 
     const gameState = {
       currentScene: "NewLibraryScene",

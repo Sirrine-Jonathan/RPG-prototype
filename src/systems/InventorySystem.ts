@@ -37,6 +37,10 @@ export class InventorySystem {
     return this.inventories.get(actorId) || [];
   }
 
+  replaceInventory(actorId: string, items: InventoryItem[]): void {
+    this.inventories.set(actorId, items.map(item => ({ ...item })));
+  }
+
   hasItem(actorId: string, itemId: string): boolean {
     const inventory = this.inventories.get(actorId);
     return inventory ? inventory.some(item => item.id === itemId) : false;

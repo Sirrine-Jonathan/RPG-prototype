@@ -46,17 +46,15 @@ export class NewLibraryScene extends NewGameplayScene {
   private restoreGameState(): void {
     console.log('📚 Restoring game state in library...');
     
-    // Restore player inventory
-    if (this.loadedState.playerInventory) {
-      const inventorySystem = InventorySystem.getInstance();
-      this.loadedState.playerInventory.forEach((item: any) => {
-        inventorySystem.addItem('player', item);
-        console.log(`📚 Restored item to player inventory: ${item.name}`);
-      });
-    }
-    
-    // Position player if specified
     const player = this.gameManager.entityManager.getPlayer();
+    if (!player) return;
+
+    // Replace this player's inventory so repeated loads cannot accumulate items.
+    if (this.loadedState.playerInventory) {
+      InventorySystem.getInstance().replaceInventory(player.id, this.loadedState.playerInventory);
+    }
+
+    // Position player if specified
     if (this.loadedState.playerPosition && player) {
       player.setPosition(this.loadedState.playerPosition.x, this.loadedState.playerPosition.y);
       console.log(`📚 Positioned player at: ${this.loadedState.playerPosition.x}, ${this.loadedState.playerPosition.y}`);

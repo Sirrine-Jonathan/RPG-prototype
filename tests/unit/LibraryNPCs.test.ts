@@ -17,6 +17,35 @@ vi.mock('../../src/systems/LevelLoader', () => ({ LevelLoader: class {} }));
 vi.mock('../../src/ui/ChatInterface', () => ({ ChatInterface: class {} }));
 import { EntityManager } from '../../src/core/EntityManager';
 import { NewLibraryScene } from '../../src/scenes/NewLibraryScene';
+import { InventorySystem } from '../../src/systems/InventorySystem';
+
+it('restores the active player inventory exactly on repeated and empty loads', () => {
+  const inventory = new InventorySystem();
+  const singleton = vi.spyOn(InventorySystem, 'getInstance').mockReturnValue(inventory);
+  const photo = { id: 'photo', name: 'Photo', description: 'Evidence' };
+  const stale = { id: 'stale', name: 'Old clue', description: 'Not saved' };
+  inventory.addItem('Detective Riley', stale);
+  inventory.addItem('Margaret', stale);
+  const player = { id: 'Detective Riley', setPosition: vi.fn() };
+  const scene = {
+    loadedState: { playerInventory: [photo], playerPosition: { x: 250, y: 200 } },
+    gameManager: { entityManager: { getPlayer: () => player } }
+  };
+  try {
+    const restore = () => (NewLibraryScene.prototype as any).restoreGameState.call(scene);
+    restore();
+    restore();
+    expect(inventory.getInventory(player.id)).toEqual([photo]);
+    expect(inventory.getInventory('player')).toEqual([]);
+    expect(inventory.getInventory('Margaret')).toEqual([stale]);
+    expect(player.setPosition).toHaveBeenCalledWith(250, 200);
+    inventory.getInventory(player.id)[0].name = 'Changed';
+    expect(photo.name).toBe('Photo');
+    scene.loadedState.playerInventory = [];
+    restore();
+    expect(inventory.getInventory(player.id)).toEqual([]);
+  } finally { singleton.mockRestore(); }
+});
 
 it('creates and registers all library NPCs under their persistent IDs', () => {
   const entityManager = new EntityManager();

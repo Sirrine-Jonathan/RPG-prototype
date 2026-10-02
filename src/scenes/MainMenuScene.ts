@@ -66,7 +66,11 @@ export class MainMenuScene extends Scene {
   startNewGame() {
     console.log("Starting new game...");
     // Clear any saved game state
-    localStorage.removeItem('whispering_stones_save');
+    try {
+      localStorage.removeItem('whispering_stones_save');
+    } catch (error) {
+      console.warn('Save storage unavailable; starting without clearing the stored checkpoint.', error);
+    }
     InventorySystem.getInstance().reset();
     this.scene.start("NewTownScene"); // Use new architecture
   }
@@ -75,7 +79,14 @@ export class MainMenuScene extends Scene {
     console.log("Loading game...");
     
     // Check if there's a saved game
-    const savedGame = localStorage.getItem('whispering_stones_save');
+    let savedGame: string | null;
+    try {
+      savedGame = localStorage.getItem('whispering_stones_save');
+    } catch (error) {
+      console.warn('Save storage unavailable; starting a new game.', error);
+      this.startNewGame();
+      return;
+    }
     
     if (savedGame) {
       try {

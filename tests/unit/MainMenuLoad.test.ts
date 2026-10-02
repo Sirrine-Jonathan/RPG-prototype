@@ -64,3 +64,21 @@ it.each([
   expect(menu.scene.start).toHaveBeenCalledWith('NewTownScene');
   expect(storage.removeItem).toHaveBeenCalledWith('whispering_stones_save');
 });
+
+// Embedded/private browser contexts can deny storage access entirely.
+it.each(['new', 'load'])('starts town with clean inventory when %s game storage is denied', (action) => {
+  const inventory = InventorySystem.getInstance();
+  inventory.addItem('Detective Riley', { id: 'old-clue', name: 'Old clue', description: 'Previous session' });
+  vi.stubGlobal('localStorage', {
+    getItem: () => { throw new Error('Storage access denied'); },
+    removeItem: () => { throw new Error('Storage access denied'); },
+  });
+  const menu = new MainMenuScene();
+  menu.scene = { start: vi.fn() } as any;
+  try {
+    expect(() => action === 'new' ? menu.startNewGame() : menu.loadGame()).not.toThrow();
+    expect(menu.scene.start).toHaveBeenCalledTimes(1);
+    expect(menu.scene.start).toHaveBeenCalledWith('NewTownScene');
+    expect(inventory.getInventory('Detective Riley')).toEqual([]);
+  } finally { inventory.reset(); }
+});

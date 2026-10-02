@@ -1,4 +1,5 @@
 import { AIService } from "../services/AIService";
+import { offlineDialogue } from "../services/OfflineDialogue";
 import { SpeechBubble } from "../ui/SpeechBubble";
 import { ActionBubble } from "../ui/ActionBubble";
 import { BaseActor, Tool } from "./BaseActor";
@@ -27,6 +28,8 @@ export class PersistentNPC extends BaseActor {
   private shouldInterruptLoop: boolean = false; // Flag to interrupt current loop
   private conversationHistory: any[] = []; // Legacy - will be replaced
   private messages: any[] = []; // New message-based context
+  private speechEventBus?: EventBus;
+  private speechListener?: (event: any) => void;
   private logger = Logger.getInstance();
 
   // Following behavior
@@ -77,9 +80,11 @@ export class PersistentNPC extends BaseActor {
     const gameManager = (globalThis as any).gameManager;
     if (gameManager && gameManager.eventBus) {
       // Listen for speech events from other NPCs
-      gameManager.eventBus.subscribe("npc_speech", (event: any) => {
+      this.speechEventBus = gameManager.eventBus;
+      this.speechListener = (event: any) => {
         this.handleSpeechEvent(event.data);
-      });
+      };
+      this.speechEventBus!.subscribe("npc_speech", this.speechListener);
       
       // Note: player_speech events are handled by ProximitySystem calling triggerEvent
       // No need to subscribe directly to avoid duplicate events
@@ -450,11 +455,14 @@ export class PersistentNPC extends BaseActor {
 
             this.logger.llmToolResult(this.name, functionName, toolResult);
           } else if (response.content) {
-            // Add assistant message without tool calls
+            // Plain dialogue must reach the same speech UI and event bus as
+            // the speak tool, rather than only appearing in AI history.
             this.messages.push({
               role: "assistant",
               content: response.content
             });
+            await this.handleSpeak(response.content);
+            chosenAction = "speak";
           }
         } finally {
           // Always clear the pending request
@@ -468,8 +476,14 @@ export class PersistentNPC extends BaseActor {
           `[NPC_FLOW] ${this.name}: AI failed for event "${eventType}":`,
           error
         );
-        // No fallback actions - let failures be visible for development
-        chosenAction = "ai_failed";
+        const fallback = offlineDialogue(this.name, eventType, eventData.message);
+        if (fallback) {
+          this.logger.log(LogTag.AI_FALLBACK, "Using scripted player dialogue", this.name);
+          await this.handleSpeak(fallback);
+          chosenAction = "offline_speak";
+        } else {
+          chosenAction = "ai_failed";
+        }
       }
     }
 
@@ -578,7 +592,7 @@ export class PersistentNPC extends BaseActor {
         `[NPC_FLOW] ${this.name}: Player interaction AI failed:`,
         error
       );
-      this.say("Hello there!");
+      this.say(offlineDialogue(this.name, "initial_approach")!);
     }
   }
 
@@ -1381,6 +1395,11 @@ BEHAVIORAL GUIDELINES:
   }
 
   public destroy(): void {
+    if (this.speechEventBus && this.speechListener) {
+      this.speechEventBus.unsubscribe("npc_speech", this.speechListener);
+      this.speechEventBus = undefined;
+      this.speechListener = undefined;
+    }
     if (this.sprite) {
       this.sprite.destroy();
       this.nameText?.destroy();

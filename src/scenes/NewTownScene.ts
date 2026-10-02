@@ -9,9 +9,21 @@ import { InventorySystem } from "../systems/InventorySystem";
 export class NewTownScene extends NewGameplayScene {
   private levelLoader!: LevelLoader;
   private portalService!: PortalService;
+  private loadedState: any = null;
 
   constructor() {
     super({ key: "NewTownScene" });
+  }
+
+  init(data: any = {}) {
+    this.loadedState = data.loadedState || null;
+  }
+
+  private restoreGameState(): void {
+    const player = this.gameManager.entityManager.getPlayer();
+    if (!player || !this.loadedState) return;
+    InventorySystem.getInstance().replaceInventory(player.id, this.loadedState.playerInventory);
+    player.setPosition(this.loadedState.playerPosition.x, this.loadedState.playerPosition.y);
   }
 
   protected loadSceneContent(): void {
@@ -26,6 +38,7 @@ export class NewTownScene extends NewGameplayScene {
         console.log(`🏘️ NewTownScene: Town level loaded`);
         this.setupPortalsAndSpawns();
         this.createSceneNPCs();
+        this.restoreGameState();
 
         // Set up auto-save when player gets Maya's photo
         this.setupAutoSave();
@@ -46,7 +59,7 @@ export class NewTownScene extends NewGameplayScene {
         width: levelData.width,
         height: levelData.height,
         tileSize: levelData.tileSize,
-        collision: levelData.collision,
+        collision: levelData.collision || levelData.layers?.collision,
       });
       console.log(
         `🗺️ NewTownScene: Boundary system initialized with ${levelData.width}x${levelData.height} tiles`
@@ -65,13 +78,18 @@ export class NewTownScene extends NewGameplayScene {
       levelData.layers.objects.forEach((obj: any, index: number) => {
         console.log(`🔍 NewTownScene: Object ${index}:`, obj);
 
-        if (obj.type === "portal") {
+        if (obj.type === "portal" && obj.properties.targetScene === "LibraryScene") {
+          // Return outside the trigger radius to avoid immediately entering again.
+          this.portalService.addSpawnPoint({
+            id: "town_library", x: obj.x * levelData.tileSize + 96,
+            y: obj.y * levelData.tileSize,
+          });
           this.portalService.addPortal({
             id: obj.properties.portalId,
             x: obj.x * levelData.tileSize,
             y: obj.y * levelData.tileSize,
             targetScene: "NewLibraryScene", // Use new architecture scene
-            targetPortalId: obj.properties.targetPortalId,
+            targetPortalId: "library_entrance",
           });
         } else if (obj.type === "spawn") {
           this.portalService.addSpawnPoint({
@@ -96,6 +114,8 @@ export class NewTownScene extends NewGameplayScene {
       );
     }
 
+    this.applyPortalSpawn(this.portalService);
+
     const portals = this.portalService.getPortals();
     const spawns = this.portalService.getSpawnPoints();
     console.log(
@@ -105,6 +125,11 @@ export class NewTownScene extends NewGameplayScene {
 
   update() {
     super.update();
+    const player = this.gameManager.entityManager.getPlayer();
+    if (player && this.portalService) {
+      const position = player.getPosition();
+      this.portalService.checkPortalTriggers(position.x, position.y);
+    }
   }
 
   protected createSceneNPCs(): void {
@@ -155,32 +180,37 @@ export class NewTownScene extends NewGameplayScene {
 
     // Check periodically if player has Maya's photo (simple approach)
     const checkForPhoto = () => {
-      const playerInventory = inventorySystem.getInventory("player");
+      const player = this.gameManager.entityManager.getPlayer();
+      const playerInventory = player ? inventorySystem.getInventory(player.id) : [];
       const hasPhoto = playerInventory.some(
         (item) => item.id === "Maya's Photo"
       );
 
       if (hasPhoto) {
         console.log("🏘️ Player received Maya's photo, auto-saving...");
-        this.saveGameState();
-        return; // Stop checking
+        if (this.saveGameState()) return;
+        // Storage may recover; retry slowly without interrupting gameplay.
+        this.time.delayedCall(30000, checkForPhoto);
+        return;
       }
 
       // Check again in 2 seconds
-      setTimeout(checkForPhoto, 2000);
+      this.time.delayedCall(2000, checkForPhoto);
     };
 
     // Start checking after a short delay
-    setTimeout(checkForPhoto, 5000);
+    this.time.delayedCall(5000, checkForPhoto);
   }
 
-  private saveGameState(): void {
+  private saveGameState(): boolean {
     const inventorySystem = InventorySystem.getInstance();
-    const playerInventory = inventorySystem.getInventory("player");
+    const player = this.gameManager.entityManager.getPlayer();
+    if (!player) return false;
+    const playerInventory = inventorySystem.getInventory(player.id);
 
     const gameState = {
-      currentScene: "NewLibraryScene",
-      playerPosition: { x: 400, y: 300 }, // Default library position
+      currentScene: "NewTownScene",
+      playerPosition: player.getPosition(),
       playerInventory: playerInventory,
       gameProgress: {
         metMargaret: true,
@@ -190,8 +220,14 @@ export class NewTownScene extends NewGameplayScene {
       timestamp: new Date().toISOString(),
     };
 
-    localStorage.setItem("whispering_stones_save", JSON.stringify(gameState));
-    console.log("🏘️ Game state saved successfully");
+    try {
+      localStorage.setItem("whispering_stones_save", JSON.stringify(gameState));
+      console.log("🏘️ Game state saved successfully");
+      return true;
+    } catch (error) {
+      console.error("🏘️ Auto-save failed; progress was not saved", error);
+      return false;
+    }
   }
 
   protected getSceneWidth(): number {

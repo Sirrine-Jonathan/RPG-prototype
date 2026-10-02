@@ -1,5 +1,11 @@
 import { Logger, LogTag } from "../utils/Logger";
 
+export interface NPCTool {
+  name: string;
+  description: string;
+  parameters?: any;
+}
+
 export class AIService {
   private static instance: AIService;
   private logger = Logger.getInstance();
@@ -107,6 +113,7 @@ export class AIService {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestBody),
+        signal: AbortSignal.timeout(10000),
       });
 
       console.log(
@@ -132,6 +139,23 @@ export class AIService {
       console.log(`[LLM_DEBUG] ${npcName}: Parsing JSON response...`);
       const data = await response.json();
       console.log(`[LLM_DEBUG] ${npcName}: JSON parsed successfully`);
+
+      // An empty or malformed successful HTTP response must trigger the same
+      // recovery path as a connection failure, rather than silently stalling.
+      const message = data?.message;
+      const hasContent = typeof message?.content === "string" && message.content.trim().length > 0;
+      const hasTools = Array.isArray(message?.tool_calls) && message.tool_calls.length > 0;
+      if (
+        !message ||
+        (message.content != null && typeof message.content !== "string") ||
+        (message.tool_calls != null && !Array.isArray(message.tool_calls)) ||
+        (hasTools && message.tool_calls.some((tool: any) =>
+          typeof tool?.function?.name !== "string" || !tool.function.name.trim()
+        )) ||
+        (!hasContent && !hasTools)
+      ) {
+        throw new Error("Invalid response from local AI: expected dialogue or tool calls");
+      }
 
       // Log response - handle both OpenAI format and JSON-in-content format
       if (data.message?.tool_calls?.[0]) {

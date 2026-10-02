@@ -15,7 +15,7 @@ export class NewLibraryScene extends NewGameplayScene {
     super({ key: 'NewLibraryScene' });
   }
   
-  init(data: any) {
+  init(data: any = {}) {
     this.loadedState = data.loadedState;
     console.log('📚 NewLibraryScene: Initialized with loaded state:', this.loadedState);
   }
@@ -46,18 +46,17 @@ export class NewLibraryScene extends NewGameplayScene {
   private restoreGameState(): void {
     console.log('📚 Restoring game state in library...');
     
-    // Restore player inventory
+    const player = this.gameManager.entityManager.getPlayer();
+    if (!player) return;
+
+    // Replace this player's inventory so repeated loads cannot accumulate items.
     if (this.loadedState.playerInventory) {
-      const inventorySystem = InventorySystem.getInstance();
-      this.loadedState.playerInventory.forEach((item: any) => {
-        inventorySystem.addItem('player', item);
-        console.log(`📚 Restored item to player inventory: ${item.name}`);
-      });
+      InventorySystem.getInstance().replaceInventory(player.id, this.loadedState.playerInventory);
     }
-    
+
     // Position player if specified
-    if (this.loadedState.playerPosition && this.player) {
-      this.player.setPosition(this.loadedState.playerPosition.x, this.loadedState.playerPosition.y);
+    if (this.loadedState.playerPosition && player) {
+      player.setPosition(this.loadedState.playerPosition.x, this.loadedState.playerPosition.y);
       console.log(`📚 Positioned player at: ${this.loadedState.playerPosition.x}, ${this.loadedState.playerPosition.y}`);
     }
     
@@ -69,6 +68,13 @@ export class NewLibraryScene extends NewGameplayScene {
     console.log(`🔍 NewLibraryScene: Level data:`, levelData);
     console.log(`🔍 NewLibraryScene: Found ${levelData?.layers?.objects?.length || 0} objects in level`);
     
+    if (levelData) {
+      this.gameManager.systemManager.boundarySystem.setLevelBounds({
+        width: levelData.width, height: levelData.height, tileSize: levelData.tileSize,
+        collision: levelData.collision || levelData.layers?.collision,
+      });
+    }
+
     if (levelData?.layers?.objects) {
       levelData.layers.objects.forEach((obj: any, index: number) => {
         console.log(`🔍 NewLibraryScene: Object ${index}:`, obj);
@@ -83,7 +89,7 @@ export class NewLibraryScene extends NewGameplayScene {
           });
         } else if (obj.type === 'spawn') {
           this.portalService.addSpawnPoint({
-            id: obj.id,
+            id: obj.properties?.spawnId || obj.id,
             x: obj.x * levelData.tileSize,
             y: obj.y * levelData.tileSize,
             isDefault: obj.subtype === 'portal' || obj.id === 'library_entrance_spawn'
@@ -92,6 +98,8 @@ export class NewLibraryScene extends NewGameplayScene {
       });
     }
     
+    this.applyPortalSpawn(this.portalService);
+
     // Create bookshelves
     this.createBookshelves();
     
@@ -102,6 +110,11 @@ export class NewLibraryScene extends NewGameplayScene {
   
   update() {
     super.update();
+    const player = this.gameManager.entityManager.getPlayer();
+    if (player && this.portalService) {
+      const position = player.getPosition();
+      this.portalService.checkPortalTriggers(position.x, position.y);
+    }
   }
   
   protected createSceneNPCs(): void {
@@ -142,9 +155,9 @@ export class NewLibraryScene extends NewGameplayScene {
       goals: ['Find the "Millbrook Town Records" book']
     });
     
-    this.gameManager.entityManager.addNPCToScene('librarian_sarah', this.scene.key);
-    this.gameManager.entityManager.addNPCToScene('scholar_marcus', this.scene.key);
-    this.gameManager.entityManager.addNPCToScene('historian_vera', this.scene.key);
+    this.gameManager.entityManager.addNPCToScene(librarian.id, this.scene.key);
+    this.gameManager.entityManager.addNPCToScene(scholar.id, this.scene.key);
+    this.gameManager.entityManager.addNPCToScene(historian.id, this.scene.key);
     
     console.log(`📚 NewLibraryScene: Created ${this.gameManager.entityManager.getNPCsForScene(this.scene.key).length} NPCs`);
     console.log(`📚 NewLibraryScene: Librarian at (${librarian.getPosition().x}, ${librarian.getPosition().y})`);

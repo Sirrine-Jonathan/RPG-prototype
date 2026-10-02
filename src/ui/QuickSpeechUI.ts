@@ -239,10 +239,11 @@ export class QuickSpeechUI {
         let player = this.scene.children.getByName('player') as Phaser.GameObjects.Sprite;
         if (!player) {
             // Look for the sprite that the camera is following
-            const camera = this.scene.cameras.main;
-            console.log('🎯 Camera follow target:', camera.followTarget);
-            if (camera.followTarget) {
-                player = camera.followTarget as Phaser.GameObjects.Sprite;
+            const camera = this.scene.cameras.main as any;
+            const followTarget = camera.followTarget || camera._follow;
+            console.log('🎯 Camera follow target:', followTarget);
+            if (followTarget) {
+                player = followTarget as Phaser.GameObjects.Sprite;
                 console.log('🎯 Found player via camera follow target:', player.constructor.name);
             }
         }
@@ -274,9 +275,10 @@ export class QuickSpeechUI {
 
     private getPlayerPosition(): { x: number; y: number } {
         // Try to get player position from camera follow target first
-        const camera = this.scene!.cameras.main;
-        if (camera.followTarget) {
-            const target = camera.followTarget as any;
+        const camera = this.scene!.cameras.main as any;
+        const followTarget = camera.followTarget || camera._follow;
+        if (followTarget) {
+            const target = followTarget as any;
             return { x: target.x, y: target.y };
         }
         

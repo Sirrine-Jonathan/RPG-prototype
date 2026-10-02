@@ -42,6 +42,11 @@ export class MovementSystem {
     const gameManager = GameManager.getInstance();
     const player = gameManager.entityManager.getPlayer();
     if (!player || !this.cursors || !this.wasd) return;
+
+    // Chat keystrokes must not cancel an existing click-to-move route.
+    const isChatFocused = document.activeElement?.tagName === "TEXTAREA" ||
+                         document.activeElement?.tagName === "INPUT";
+    if (isChatFocused) return;
     
     // Check for input to cancel pathfinding
     const hasInput = this.cursors.left.isDown || this.cursors.right.isDown || 
@@ -59,13 +64,7 @@ export class MovementSystem {
       return;
     }
     
-    // Handle keyboard movement
-    const isChatFocused = document.activeElement?.tagName === "TEXTAREA" || 
-                         document.activeElement?.tagName === "INPUT";
-    
-    if (!isChatFocused) {
-      this.handleKeyboardMovement(player);
-    }
+    this.handleKeyboardMovement(player);
   }
   
   private handleKeyboardMovement(player: any): void {

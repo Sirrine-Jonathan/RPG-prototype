@@ -1,4 +1,5 @@
 import { Scene } from "phaser";
+import { InventorySystem } from "../systems/InventorySystem";
 
 export class MainMenuScene extends Scene {
   constructor() {
@@ -65,7 +66,12 @@ export class MainMenuScene extends Scene {
   startNewGame() {
     console.log("Starting new game...");
     // Clear any saved game state
-    localStorage.removeItem('whispering_stones_save');
+    try {
+      localStorage.removeItem('whispering_stones_save');
+    } catch (error) {
+      console.warn('Save storage unavailable; starting without clearing the stored checkpoint.', error);
+    }
+    InventorySystem.getInstance().reset();
     this.scene.start("NewTownScene"); // Use new architecture
   }
 
@@ -73,44 +79,41 @@ export class MainMenuScene extends Scene {
     console.log("Loading game...");
     
     // Check if there's a saved game
-    const savedGame = localStorage.getItem('whispering_stones_save');
+    let savedGame: string | null;
+    try {
+      savedGame = localStorage.getItem('whispering_stones_save');
+    } catch (error) {
+      console.warn('Save storage unavailable; starting a new game.', error);
+      this.startNewGame();
+      return;
+    }
     
     if (savedGame) {
+      let gameState: any;
       try {
-        const gameState = JSON.parse(savedGame);
-        console.log("Loading saved game state:", gameState);
-        
-        // Start the saved scene
-        this.scene.start(gameState.currentScene, { loadedState: gameState });
+        gameState = JSON.parse(savedGame);
+        // Only these gameplay scenes support checkpoint restoration.
+        if (!gameState || !['NewLibraryScene', 'NewTownScene'].includes(gameState.currentScene) ||
+            !gameState.playerPosition ||
+            !Number.isFinite(gameState.playerPosition.x) ||
+            !Number.isFinite(gameState.playerPosition.y) ||
+            !Array.isArray(gameState.playerInventory) ||
+            !gameState.playerInventory.every((item: any) => item &&
+              typeof item.id === 'string' && typeof item.name === 'string' &&
+              typeof item.description === 'string')) {
+          throw new Error('Unsupported or invalid saved game');
+        }
       } catch (error) {
         console.error("Failed to load game:", error);
         // Fallback to new game
         this.startNewGame();
+        return;
       }
+      // Scene startup failures must not erase a valid checkpoint.
+      this.scene.start(gameState.currentScene, { loadedState: gameState });
     } else {
-      console.log("No saved game found, creating library test save...");
-      // Create a test save state for library scene
-      const testSave = {
-        currentScene: 'NewLibraryScene',
-        playerPosition: { x: 400, y: 300 },
-        playerInventory: [
-          {
-            id: "Maya's Photo",
-            name: "Maya's Photo",
-            description: "A recent photo of Maya, the missing person. She appears to be a young woman with dark hair, smiling at the camera. In the background, you can clearly see the town library's distinctive arched entrance. Maya is holding what looks like an old book or journal.",
-            category: 'evidence'
-          }
-        ],
-        gameProgress: {
-          metMargaret: true,
-          hasPhoto: true,
-          currentObjective: 'investigate_library'
-        }
-      };
-      
-      // Save and load the test state
-      localStorage.setItem('whispering_stones_save', JSON.stringify(testSave));
-      this.scene.start('NewLibraryScene', { loadedState: testSave });
+      console.log("No saved game found, starting a new game...");
+      this.startNewGame();
     }
   }
 }

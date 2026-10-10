@@ -1,5 +1,10 @@
 import { Logger, LogTag } from "../utils/Logger";
 
+/** Local runtimes return the same envelope as the current /api/chat server. */
+export interface LocalAIBackend {
+  complete(request: { messages: any[]; tools: any[] }): Promise<{ message: any }>;
+}
+
 export class AIService {
   private static instance: AIService;
   private logger = Logger.getInstance();
@@ -12,8 +17,13 @@ export class AIService {
     return AIService.instance;
   }
 
-  constructor() {
+  constructor(private backend?: LocalAIBackend) {
     this.serverUrl = 'http://localhost:8080';
+  }
+
+  /** Applies to existing singleton consumers; caller owns backend disposal. */
+  setLocalBackend(backend?: LocalAIBackend): void {
+    this.backend = backend;
   }
 
   async generateResponseWithTools(messages: any[], tools: any[]): Promise<any> {
@@ -78,23 +88,28 @@ export class AIService {
         }
       });
 
-      console.log(`[LLM_DEBUG] ${npcName}: Making request to server...`);
-      const response = await fetch(`${this.serverUrl}/api/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: cleanMessages,
-          tools: tools,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Server error: ${response.status} ${errorText}`);
+      // Capture the selected backend for this request; changing modes affects later calls.
+      const backend = this.backend;
+      let data: { message: any };
+      if (backend) {
+        data = await backend.complete({ messages: cleanMessages, tools });
+      } else {
+        const response = await fetch(`${this.serverUrl}/api/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages: cleanMessages, tools }),
+        });
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Server error: ${response.status} ${errorText}`);
+        }
+        data = await response.json();
       }
-
-      const data = await response.json();
-      const message = data.message;
+      const message = data?.message;
+      const hasContent = typeof message?.content === 'string' && message.content.trim().length > 0;
+      const hasTools = Array.isArray(message?.tool_calls) && message.tool_calls.length > 0 &&
+        message.tool_calls.every((tool: any) => typeof tool?.function?.name === 'string' && tool.function.name.trim().length > 0);
+      if (!hasContent && !hasTools) throw new Error('Invalid AI response message');
 
       // Log response
       if (message?.tool_calls?.[0]) {

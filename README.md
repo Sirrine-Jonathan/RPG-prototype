@@ -87,3 +87,31 @@ npm test         # Run tests
 - All services stop together with Ctrl+C
 
 Built with TypeScript, Phaser 3, and modern web technologies.
+
+
+## Optional local inference integration
+
+`AIService.getInstance().setLocalBackend(backend)` routes existing NPC/player
+consumers through an implementation of `LocalAIBackend`. Clear it with
+`setLocalBackend()` to resume the current `http://localhost:8080/api/chat`
+server route. Local failures propagate to the caller; they do not trigger a
+server request. Logger telemetry is separate and can still use HTTP.
+
+`WorkerAIBackend` owns a supplied dedicated Web Worker. Requests use
+`{ type: 'complete', id, request: { messages, tools } }`; replies use
+`{ type: 'result', id, result: { message } }` or
+`{ type: 'error', id, error: 'description' }`. The runtime must implement this
+protocol and return content or valid tool calls. Model selection and any
+provider-specific history conversion belong in that runtime.
+
+The default 10-second deadline covers loading as well as generation. A timeout
+or worker crash terminates the worker and rejects all outstanding requests.
+Call `dispose()` when replacing a backend; the AI service does not own that
+lifecycle. Create a new worker/backend after termination.
+
+This is transport and integration groundwork: no model runtime or weights are
+included, and offline generation/gameplay has not been validated. Focused
+checks: `node node_modules/vitest/vitest.mjs run tests/unit`. Current upstream
+main has six legacy sandbox suite import failures and 23 TypeScript diagnostics;
+this change leaves those diagnostics unchanged. Full build/launch validation
+remains open.

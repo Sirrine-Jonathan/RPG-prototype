@@ -1,8 +1,6 @@
-import { GameManager } from '../core/GameManager';
-import { Tool } from './BaseActor';
+import type { Tool } from './BaseActor';
 import { InventorySystem } from '../systems/InventorySystem';
 import { AIService } from '../services/AIService';
-import { Logger } from '../utils/Logger';
 
 export class PersistentPlayer {
   public id: string = 'Detective Riley';
@@ -206,16 +204,33 @@ export class PersistentPlayer {
     if (!this.autoMode) return;
 
     try {
-      const context = this.buildAutoPlayContext();
+      const tools = this.getAutoPlayTools();
       const response = await this.aiService.generateResponseWithTools(
-        this.buildAutoPlayPrompt(),
-        context,
-        this.getAutoPlayTools()
+        [{ role: 'system', content: this.buildAutoPlayPrompt() }, ...this.buildAutoPlayContext()],
+        tools.map(({ name, description, parameters }) => ({
+          type: 'function', function: { name, description, parameters }
+        }))
       );
 
-      if (response.toolCalls && response.toolCalls.length > 0) {
-        const toolCall = response.toolCalls[0];
-        await this.executeAutoPlayTool(toolCall.function.name, toolCall.function.arguments);
+      if (this.autoMode && response?.tool_calls?.length > 0) {
+        const toolCall = response.tool_calls[0];
+        const tool = tools.find(candidate => candidate.name === toolCall.function.name);
+        if (!tool) throw new Error(`Unknown autoplay tool: ${toolCall.function.name}`);
+        const args = typeof toolCall.function.arguments === 'string'
+          ? JSON.parse(toolCall.function.arguments) : toolCall.function.arguments;
+        if (!args || typeof args !== 'object' || Array.isArray(args)) {
+          throw new Error('Invalid autoplay arguments');
+        }
+        for (const key of tool.parameters.required) {
+          if (typeof args[key] !== 'string' || !args[key].trim()) {
+            throw new Error(`Invalid autoplay argument: ${key}`);
+          }
+        }
+        for (const [key, schema] of Object.entries(tool.parameters.properties)) {
+          const allowed = (schema as { enum?: string[] }).enum;
+          if (allowed && !allowed.includes(args[key])) throw new Error(`Invalid autoplay argument: ${key}`);
+        }
+        await tool.handler(args);
       }
 
     } catch (error) {
@@ -262,7 +277,6 @@ AVAILABLE ACTIONS:
 - speak_to_npcs: Talk to nearby NPCs about the case
 - navigate_to_location: Move to a different area to investigate
 - examine_evidence: Review items in your inventory
-- ask_questions: Ask specific questions about Maya's disappearance
 
 Choose your next investigative action based on what you know so far.`;
   }
@@ -361,6 +375,7 @@ Choose your next investigative action based on what you know so far.`;
   }
 
   public destroy(): void {
+    this.disableAutoMode();
     if (this.sprite) {
       this.sprite.destroy();
       this.sprite = null;

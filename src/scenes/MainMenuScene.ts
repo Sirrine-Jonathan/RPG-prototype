@@ -1,5 +1,6 @@
 import { Scene } from "phaser";
 import { InventorySystem } from "../systems/InventorySystem";
+import { WinConditionManager } from "../systems/WinConditionManager";
 
 export class MainMenuScene extends Scene {
   constructor() {
@@ -50,14 +51,8 @@ export class MainMenuScene extends Scene {
       .setInteractive()
       .on("pointerdown", () => this.loadGame());
 
-    const levelTestBtn = this.add
-      .text(width / 2, height * 0.7, "Level Test", buttonStyle)
-      .setOrigin(0.5)
-      .setInteractive()
-      .on("pointerdown", () => this.scene.start('LevelTestScene'));
-
     // Button hover effects
-    [newGameBtn, loadGameBtn, levelTestBtn].forEach((btn) => {
+    [newGameBtn, loadGameBtn].forEach((btn) => {
       btn.on("pointerover", () => btn.setStyle({ backgroundColor: "#003300" }));
       btn.on("pointerout", () => btn.setStyle({ backgroundColor: "#001100" }));
     });
@@ -72,6 +67,7 @@ export class MainMenuScene extends Scene {
       console.warn('Save storage unavailable; starting without clearing the stored checkpoint.', error);
     }
     InventorySystem.getInstance().reset();
+    WinConditionManager.getInstance().reset();
     this.scene.start("NewTownScene"); // Use new architecture
   }
 
@@ -111,6 +107,7 @@ export class MainMenuScene extends Scene {
       }
       // Scene startup failures must not erase a valid checkpoint.
       this.scene.start(gameState.currentScene, { loadedState: gameState });
+      WinConditionManager.getInstance().restoreEvidence(gameState.playerInventory.map((item: any) => item.id));
     } else {
       console.log("No saved game found, starting a new game...");
       this.startNewGame();

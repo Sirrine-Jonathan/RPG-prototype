@@ -184,7 +184,7 @@ export class NewTownScene extends NewGameplayScene {
       const player = this.gameManager.entityManager.getPlayer();
       const playerInventory = player ? inventorySystem.getInventory(player.id) : [];
       const hasPhoto = playerInventory.some(
-        (item) => item.id === "Maya's Photo"
+        (item) => item.id === "mayas_photo" || item.id === "Maya's Photo"
       );
 
       if (hasPhoto) {
@@ -215,8 +215,9 @@ export class NewTownScene extends NewGameplayScene {
       playerInventory: playerInventory,
       gameProgress: {
         metMargaret: true,
-        hasPhoto: true,
-        currentObjective: "investigate_library",
+        hasPhoto: playerInventory.some(item => item.id === "mayas_photo" || item.id === "Maya's Photo"),
+        currentObjective: playerInventory.some(item => item.id === "mayas_photo" || item.id === "Maya's Photo")
+          ? "investigate_library" : "meet_grace",
       },
       timestamp: new Date().toISOString(),
     };

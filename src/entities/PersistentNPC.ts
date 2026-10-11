@@ -5,6 +5,7 @@ import { ActionBubble } from "../ui/ActionBubble";
 import { BaseActor, Tool } from "./BaseActor";
 import { EventBus } from "../systems/EventBus";
 import { Logger, LogTag } from "../utils/Logger";
+import { InventorySystem } from "../systems/InventorySystem";
 
 export class PersistentNPC extends BaseActor {
   public id: string;

@@ -60,7 +60,7 @@ export abstract class NewGameplayScene extends BaseScene {
     this.loadSceneContent();
   }
   
-  private createInitialEntities(): void {
+  protected createInitialEntities(): void {
     // Create player if it doesn't exist
     let player = this.gameManager.entityManager.getPlayer();
     

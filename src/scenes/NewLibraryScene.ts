@@ -168,12 +168,26 @@ export class NewLibraryScene extends NewGameplayScene {
         'The "Chronicle of Shadows" contains the truth about the stones and the society'
       ]
     });
-    
+
+    // Create book-seeking NPCs (no custom tools - they get tools from nearby objects)
+    const scholar = this.gameManager.entityManager.createNPC('scholar_marcus', this, {
+      id: 'scholar_marcus',
+      name: 'Marcus Reed',
+      spriteKey: 'amelia',
+      x: 200,
+      y: 180,
+      personality: 'Determined scholar',
+      background: 'Researcher seeking ancient texts',
+      goals: ['Find the "Chronicle of Shadows" book']
+    });
+
     this.gameManager.entityManager.addNPCToScene(librarian.id, this.scene.key);
+    this.gameManager.entityManager.addNPCToScene(scholar.id, this.scene.key);
     this.gameManager.entityManager.addNPCToScene(historian.id, this.scene.key);
     
     console.log(`📚 NewLibraryScene: Created ${this.gameManager.entityManager.getNPCsForScene(this.scene.key).length} NPCs`);
     console.log(`📚 NewLibraryScene: Librarian at (${librarian.getPosition().x}, ${librarian.getPosition().y})`);
+    console.log(`📚 NewLibraryScene: Scholar at (${scholar.getPosition().x}, ${scholar.getPosition().y})`);
     console.log(`📚 NewLibraryScene: Historian at (${historian.getPosition().x}, ${historian.getPosition().y})`);
   }
   

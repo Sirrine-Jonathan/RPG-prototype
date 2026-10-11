@@ -207,15 +207,23 @@ export class PersistentPlayer {
 
     try {
       const context = this.buildAutoPlayContext();
-      const response = await this.aiService.generateResponseWithTools(
-        this.buildAutoPlayPrompt(),
-        context,
-        this.getAutoPlayTools()
-      );
+      const messages = [
+        { role: 'system', content: this.buildAutoPlayPrompt() },
+        ...context
+      ];
+      const tools = this.getAutoPlayTools();
+      const response = await this.aiService.generateResponseWithTools(messages, tools);
 
-      if (response.toolCalls && response.toolCalls.length > 0) {
-        const toolCall = response.toolCalls[0];
-        await this.executeAutoPlayTool(toolCall.function.name, toolCall.function.arguments);
+      const toolCalls = response?.message?.tool_calls || response?.toolCalls;
+      if (toolCalls && toolCalls.length > 0) {
+        const toolCall = toolCalls[0];
+        const tool = tools.find(t => t.name === toolCall.function.name);
+        if (tool && tool.handler) {
+          const args = typeof toolCall.function.arguments === 'string'
+            ? JSON.parse(toolCall.function.arguments)
+            : toolCall.function.arguments;
+          await tool.handler(args);
+        }
       }
 
     } catch (error) {

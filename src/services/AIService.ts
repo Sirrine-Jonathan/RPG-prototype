@@ -1,15 +1,14 @@
 import { Logger, LogTag } from "../utils/Logger";
 
-<<<<<<< HEAD
 export interface NPCTool {
   name: string;
   description: string;
   parameters?: any;
-=======
+}
+
 /** Local runtimes return the same envelope as the current /api/chat server. */
 export interface LocalAIBackend {
   complete(request: { messages: any[]; tools: any[] }): Promise<{ message: any }>;
->>>>>>> main
 }
 
 export class AIService {

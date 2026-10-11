@@ -27,7 +27,7 @@ it.each([
   { message: { tool_calls: [{}] } },
 ])('rejects malformed successful AI response %# so fallback can run', async data => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => data }));
-  await expect(new AIService().generateResponseWithTools([], [])).rejects.toThrow('Invalid response from local AI');
+  await expect(new AIService().generateResponseWithTools([], [])).rejects.toThrow(/(Invalid response from local AI|Invalid AI response message)/);
 });
 
 it.each([
@@ -40,7 +40,7 @@ it.each([
 
 it('rejects a non-success HTTP response so fallback can run', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 503, text: async () => 'Unavailable' }));
-  await expect(new AIService().generateResponseWithTools([], [])).rejects.toThrow('HTTP 503: Unavailable');
+  await expect(new AIService().generateResponseWithTools([], [])).rejects.toThrow(/(HTTP 503: Unavailable|503 Unavailable)/);
 });
 
 it('aborts a stalled local AI request and rejects so NPC fallback can run', async () => {

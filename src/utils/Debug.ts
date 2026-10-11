@@ -4,7 +4,7 @@ export class Debug {
   static get enabled(): boolean {
     if (this._enabled === null) {
       const params = new URLSearchParams(window.location.search);
-      this._enabled = params.get('debug') === 'true' || true; // Temporarily always enabled
+      this._enabled = params.get('debug') === 'true';
     }
     return this._enabled;
   }

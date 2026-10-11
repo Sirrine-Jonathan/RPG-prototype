@@ -685,8 +685,8 @@
         "y": 14,
         "properties": {
           "portalId": "library_exit",
-          "targetScene": "TownScene",
-          "targetPortalId": "library_return"
+          "targetScene": "NewTownScene",
+          "targetPortalId": "obj_1"
         }
       },
       {

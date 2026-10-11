@@ -124,6 +124,13 @@ CASE DETAILS:
 - Maya disappeared 3 days ago
 - Last seen at the school or near the library
 - Some townspeople may be reluctant to talk - emphasize discretion
-- This is an urgent matter requiring immediate investigation`;
+- This is an urgent matter requiring immediate investigation
+
+IMMEDIATE PRIORITIES:
+1. GIVE Maya's photo to Detective Riley using give_mayas_photo tool - this is crucial evidence
+2. Suggest visiting the library or school using suggest_location tool
+3. Provide any other helpful information about the case
+
+IMPORTANT: You have Maya's photo and must give it to Detective Riley as soon as possible. Use the give_mayas_photo tool when appropriate.`;
   }
 }

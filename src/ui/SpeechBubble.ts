@@ -1,4 +1,5 @@
 import { Scene } from 'phaser';
+import { Logger } from '../utils/Logger';
 
 export class SpeechBubble {
     private scene: Scene;
@@ -14,6 +15,9 @@ export class SpeechBubble {
     
     show(x: number, y: number, message: string, speaker: string = 'NPC', autoHide: boolean = true, followTarget?: Phaser.GameObjects.Sprite) {
         if (!message) return;
+        
+        // Log what the player sees in the speech bubble
+        Logger.getInstance().playerUISpeechBubble(speaker, message, { x, y, autoHide });
         
         // Clean up existing bubble
         this.hide();

@@ -37,6 +37,7 @@ export class NewTownScene extends NewGameplayScene {
       .then(() => {
         console.log(`🏘️ NewTownScene: Town level loaded`);
         this.setupPortalsAndSpawns();
+        this.createInitialEntities(); // Add this call to restore player
         this.createSceneNPCs();
         this.restoreGameState();
 

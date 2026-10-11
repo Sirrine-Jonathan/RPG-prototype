@@ -3,9 +3,11 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "node scripts/startup-info.js --editor && concurrently -n \"APP,OLLAMA,EDITOR,LOGS\" -c \"cyan,yellow,green,magenta\" \"npm run dev:app\" \"npm run dev:ollama\" \"npm run dev:editor\" \"npm run dev:logs\"",
-    "start": "node scripts/startup-info.js && concurrently -n \"APP,OLLAMA,LOGS\" -c \"cyan,yellow,magenta\" \"npm run dev:app\" \"npm run dev:ollama\" \"npm run dev:logs\"",
+    "dev": "node scripts/startup-info.js --editor && node scripts/smart-dev.js --editor",
+    "start": "node scripts/startup-info.js && node scripts/smart-dev.js",
+    "dev:simple": "node scripts/smart-dev.js",
     "dev:app": "vite",
+    "dev:server": "cd server && npm run dev",
     "dev:ollama": "ollama serve",
     "dev:editor": "cd sandbox/level-editor && npm install --silent && npm start",
     "dev:logs": "node log-server.cjs",

@@ -200,13 +200,18 @@ export class ProximitySystem {
       data.position.y
     );
 
+    console.log(`[ProximitySystem] NPC Speech: ${data.speakerName} at distance ${distance}px (hearing range: ${data.hearingRange}px)`);
+
     // If player is within hearing range, fire player-heard event
     if (distance <= data.hearingRange) {
+      console.log(`[ProximitySystem] Player can hear ${data.speakerName}, emitting player-heard event`);
       this.eventBus.emit("player-heard", {
         speaker: data.speakerName,
         message: data.message,
         distance: distance,
       });
+    } else {
+      console.log(`[ProximitySystem] Player too far to hear ${data.speakerName}`);
     }
   }
 

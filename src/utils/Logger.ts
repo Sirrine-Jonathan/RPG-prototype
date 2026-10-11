@@ -35,6 +35,10 @@ export enum LogTag {
   LLM_FOLLOWUP = "LLM][Followup",
   LLM_INTERFACE = "LLM][Interface",
 
+  // Player UI Events
+  PLAYER_UI_SPEECH_BUBBLE = "PlayerUI][SpeechBubble",
+  PLAYER_UI_CHAT = "PlayerUI][Chat",
+
   // Game Events
   SCENE = "Scene",
   GAME_STATE = "GameState",
@@ -208,6 +212,15 @@ export class Logger {
 
   playerSpeech(speaker: string, message: string, data?: any): void {
     this.log(LogTag.PLAYER_SPEECH, `${speaker}: ${message}`, speaker, data);
+  }
+
+  // Player UI visibility logging
+  playerUISpeechBubble(speaker: string, message: string, data?: any): void {
+    this.log(LogTag.PLAYER_UI_SPEECH_BUBBLE, `Player sees speech bubble: ${speaker} says "${message}"`, "Player", data);
+  }
+
+  playerUIChat(speaker: string, message: string, data?: any): void {
+    this.log(LogTag.PLAYER_UI_CHAT, `Player sees in chat: ${speaker} says "${message}"`, "Player", data);
   }
 
   npcEventRaw(entity: string, eventType: string, source: string, data?: any): void {

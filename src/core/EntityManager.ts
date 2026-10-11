@@ -45,7 +45,11 @@ export class EntityManager {
   ): PersistentNPC {
     // Create specific NPC types - each is a singleton
     let npc: PersistentNPC;
-    if (id === "librarian_sarah") {
+    if (id === "teacher_elena") {
+      const existing = this.npcs.get("teacher_elena");
+      npc = existing || new PersistentNPC(scene, { ...config, id });
+      if (existing) npc.transferToScene(scene);
+    } else if (id === "librarian_sarah") {
       npc = LibrarianNPC.getInstance(scene, config);
     } else if (id === "historian_vera") {
       npc = HistorianNPC.getInstance(scene, config);

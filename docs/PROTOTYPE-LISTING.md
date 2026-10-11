@@ -12,8 +12,10 @@ meet NPCs and try local-AI conversations. Movement, inventory and checkpoints ar
 implemented. The mystery campaign and ending are still under development.
 
 Local AI requires a separately configured supported backend. Without it, NPCs use
-limited scripted greetings and replies that do not award clues. Browser-only
-players should expect an exploration prototype, not a finishable offline mystery.
+limited scripted greetings and replies. An explicit `/evidence` request near
+Grace, Sarah Mills or Teacher Elena collects the three witness clues without AI.
+The collection prototype has an evidence-complete screen; the full mystery and
+Maya's fate remain unresolved. Native browser completion is still unverified.
 
 Verified from source: arrow/WASD movement and click-to-move; Space opens quick
 speech, Enter sends and Escape closes it. Native interaction remains to be tested.

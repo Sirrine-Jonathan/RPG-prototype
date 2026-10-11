@@ -32,7 +32,7 @@ mystery RPG prototype. Would you be interested in a free 15–20 minute Windows
 browser playtest? We need candid feedback on starting a new game, moving around,
 finding the library, talking to NPCs and loading a checkpoint. The campaign is
 unfinished; we are not asking for a positive review. Local AI is optional and the
-scripted fallback cannot award clues. We will supply a verified build/link and
+explicit `/evidence` request can collect witness clues without AI; the full mystery remains unfinished. We will supply a verified build/link and
 known limitations before the session. No recording is necessary. Please tell us
 if that scope fits; no account credentials or personal documents are needed.
 
@@ -52,7 +52,8 @@ without local AI. These are recruiting targets, not acquired participants.
    stuck routes, unexpected scene returns, unreadable UI or missing assets.
 4. Try quick speech (Space, text, Enter; Escape closes). Note clarity, response
    delay, failures and whether the player understands the AI/fallback difference.
-5. If a photo can be earned in the chosen AI mode, reload and Load Game. Check
+5. Follow PROTOTYPE-INVESTIGATION.md for the explicit three-witness route. After
+   collecting the photo/library clue, wait for autosave, reload and Load Game. Check
    actual inventory and position. No synthetic save or console-awarded clues.
 6. Return between town/library and repeat a conversation. Start another New Game
    and check that previous inventory/evidence is absent.

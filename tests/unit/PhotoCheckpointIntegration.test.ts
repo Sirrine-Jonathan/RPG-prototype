@@ -37,7 +37,7 @@ it('checkpoints the real NPC photo award through the town autosave timer', async
   };
   (NewTownScene.prototype as any).setupAutoSave.call(scene);
   callbacks.shift()!();
-  expect(callbacks).toHaveLength(0);
+  expect(callbacks).toHaveLength(1);
   expect(setItem).toHaveBeenCalledOnce();
   const checkpoint = JSON.parse(setItem.mock.calls[0][1]);
   expect(checkpoint.playerInventory).toEqual([{

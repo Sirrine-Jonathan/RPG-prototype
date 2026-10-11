@@ -9,13 +9,15 @@ vi.mock('../../src/entities/PersistentNPC', () => ({
       this.id = config.id;
       this.name = config.name;
     }
+    transferToScene = vi.fn();
     getPosition() { return { x: 400, y: 200 }; }
   }
 }));
 vi.mock('../../src/scenes/NewGameplayScene', () => ({ NewGameplayScene: class {} }));
 vi.mock('../../src/systems/LevelLoader', () => ({ LevelLoader: class {} }));
-vi.mock('../../src/ui/ChatInterface', () => ({ ChatInterface: class {} }));
+vi.mock('../../src/ui/ChatInterface', () => ({ ChatInterface: class { static getInstance() {} } }));
 import { EntityManager } from '../../src/core/EntityManager';
+import { NewTownScene } from '../../src/scenes/NewTownScene';
 import { NewLibraryScene } from '../../src/scenes/NewLibraryScene';
 import { InventorySystem } from '../../src/systems/InventorySystem';
 
@@ -59,4 +61,17 @@ it('creates and registers all library NPCs under their persistent IDs', () => {
   for (const npc of npcs) expect(entityManager.getNPC(npc.id)).toBe(npc);
   (NewLibraryScene.prototype as any).createSceneNPCs.call(scene);
   expect(entityManager.getNPCsForScene('NewLibraryScene')).toEqual(npcs);
+});
+
+it('registers the town teacher once and reuses it across town entries', () => {
+  const entityManager = new EntityManager();
+  const scene = { scene: { key: 'NewTownScene' }, gameManager: { entityManager } };
+  (NewTownScene.prototype as any).createSceneNPCs.call(scene);
+  const teacher: any = entityManager.getNPC('teacher_elena');
+  expect(teacher.name).toBe('Teacher Elena');
+  expect(entityManager.getNPCsForScene('NewTownScene')).toContain(teacher);
+  (NewTownScene.prototype as any).createSceneNPCs.call(scene);
+  expect(entityManager.getNPC('teacher_elena')).toBe(teacher);
+  expect(entityManager.getNPCsForScene('NewTownScene').filter(npc => npc.id === 'teacher_elena')).toHaveLength(1);
+  expect(teacher.transferToScene).toHaveBeenCalledOnce();
 });

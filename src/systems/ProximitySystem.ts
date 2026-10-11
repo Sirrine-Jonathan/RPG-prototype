@@ -172,7 +172,7 @@ export class ProximitySystem {
       });
 
       // If NPC is within hearing range, notify them of player speech for context
-      if (distance <= 200) {
+      if (distance <= 200 && data.message?.trim().toLowerCase() !== "/evidence") {
         // NPCs can hear player speech for context (extended hearing range)
         npc.triggerEvent("npc_speech_heard", {
           speakerName: "Detective Riley",

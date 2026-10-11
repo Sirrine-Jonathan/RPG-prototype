@@ -37,7 +37,7 @@ export class WinConditionManager {
 
   private triggerWin(): void {
     this.gameWon = true;
-    console.log("🎉 GAME WON! Detective Riley solved Maya's disappearance!");
+    console.log("Prototype evidence collection complete.");
     
     // Emit win event
     const gameManager = (globalThis as any).gameManager;
@@ -73,9 +73,9 @@ export class WinConditionManager {
     
     const content = document.createElement('div');
     const heading = document.createElement('h1');
-    heading.textContent = '🎉 MYSTERY SOLVED! 🎉';
+    heading.textContent = 'Evidence collected';
     const description = document.createElement('p');
-    description.textContent = "Detective Riley successfully investigated Maya's disappearance!";
+    description.textContent = "You collected the three witness clues. This ends the prototype investigation; Maya's fate and the full mystery remain unresolved.";
     const evidence = document.createElement('p');
     evidence.textContent = 'Evidence collected: ' + Array.from(this.collectedEvidence).join(', ');
     const button = document.createElement('button');

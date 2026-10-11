@@ -8,7 +8,7 @@ import { NewTownScene } from '../../src/scenes/NewTownScene';
 import { InventorySystem } from '../../src/systems/InventorySystem';
 afterEach(() => vi.restoreAllMocks());
 
-it('polls the persistent player inventory using scene-owned timers and stops after saving', () => {
+it('polls the persistent player inventory using scene-owned timers and continues watching after saving', () => {
   const photo = { id: "mayas_photo", name: "Maya's Photo" };
   const inventory = vi.spyOn(InventorySystem.getInstance(), 'getInventory');
   inventory.mockReturnValueOnce([]).mockReturnValue([photo] as any);
@@ -26,7 +26,7 @@ it('polls the persistent player inventory using scene-owned timers and stops aft
   expect(saveGameState).not.toHaveBeenCalled();
   callbacks.shift()!();
   expect(saveGameState).toHaveBeenCalledTimes(1);
-  expect(callbacks).toHaveLength(0);
+  expect(callbacks).toHaveLength(1);
 });
 
 it('serializes the photo from the same inventory used by item transfers', () => {
@@ -67,7 +67,7 @@ it('serializes the photo from the same inventory used by item transfers', () => 
   } finally { inventory.reset(); }
 });
 
-it('retries failed autosaves slowly and stops only after successful storage', () => {
+it('retries failed autosaves slowly and continues after successful storage', () => {
   vi.spyOn(InventorySystem.getInstance(), 'getInventory').mockReturnValue([{ id: "mayas_photo" }] as any);
   const callbacks: Array<() => void> = [];
   const delayedCall = vi.fn((_delay, callback) => callbacks.push(callback));
@@ -80,7 +80,7 @@ it('retries failed autosaves slowly and stops only after successful storage', ()
   expect(delayedCall.mock.calls[1][0]).toBe(30000);
   callbacks.shift()!();
   expect(saveGameState).toHaveBeenCalledTimes(2);
-  expect(callbacks).toHaveLength(0);
+  expect(callbacks).toHaveLength(1);
 });
 
 it('reports denied storage as a failed save without throwing or claiming success', () => {

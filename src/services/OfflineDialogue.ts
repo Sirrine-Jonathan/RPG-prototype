@@ -6,7 +6,7 @@ export function offlineDialogue(name: string, event: string, message = ""): stri
   if (event !== "player_speech") return undefined;
   if (/\b(hello|hi|hey)\b/i.test(message)) return `Hello again, Detective Riley. I'm ${name}.`;
   if (/\b(help|where|what|clue|mystery)\b/i.test(message)) {
-    return "You can explore the town and inspect nearby objects. My scripted dialogue cannot provide new clues; local AI is currently unavailable.";
+    return "You can explore the town and inspect nearby objects. Local AI is currently unavailable. To request case evidence, stand near Grace, Sarah Mills, or Teacher Elena and say /evidence.";
   }
   return "I heard you, Detective Riley. I'm using scripted dialogue while local AI is unavailable, so I can't answer that freely yet.";
 }

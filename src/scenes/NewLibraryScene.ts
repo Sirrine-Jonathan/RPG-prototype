@@ -3,6 +3,7 @@ import { LevelLoader } from "../systems/LevelLoader";
 import { PortalService } from "../systems/PortalService";
 import { Bookshelf } from "../entities/Bookshelf";
 import { ChatInterface } from "../ui/ChatInterface";
+import { watchEvidenceCheckpoint } from "../systems/EvidenceCheckpoint";
 import { InventorySystem } from "../systems/InventorySystem";
 
 export class NewLibraryScene extends NewGameplayScene {
@@ -39,6 +40,7 @@ export class NewLibraryScene extends NewGameplayScene {
       if (this.loadedState) {
         this.restoreGameState();
       }
+      watchEvidenceCheckpoint(this);
     }).catch(error => {
       console.error("Failed to load library level:", error);
     });

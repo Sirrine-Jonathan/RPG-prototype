@@ -10,26 +10,44 @@ portals, movement, chat, inventory, local-AI responses, scripted fallback, and
 checkpoint loading have targeted automated tests. This is meaningful functionality,
 but it is not evidence of a complete mystery RPG.
 
-## Concrete completion gaps
+## Prototype progression update
 
-- `WinConditionManager` requires `mayas_photo`, `library_clue`, and `school_clue`.
-  `PersistentNPC.getToolsForAI` offers the school clue to a Teacher or in SchoolScene.
-  No SchoolScene is registered in main.ts and the active town/library NPCs are not
-  Teachers. There is no demonstrated normal player route to all three clues.
-- Photo/library clue handlers do connect to the victory manager. This corrects an
-  initial shallow audit that overlooked PersistentNPC handlers. However, the
-  chapter StoryProgressManager is not constructed/exposed by GameManager.
-- OfflineDialogue explicitly cannot award clues or perform game actions. A free
-  browser build without local AI does not provide a demonstrated finishable loop.
-- Victory lifecycle defects were fixed in this review: New Game resets evidence
-  and overlay; Load Game reconstructs known clues from saved inventory without
-  replaying awards/events. Tests validate this lifecycle, but no human ending or
-  complete campaign checkpoint walkthrough has been verified.
-- Removed the menu Level Test entry that started an unregistered LevelTestScene.
-  Police station remains a scaffold; town portal setup only registers the library route.
+The three-witness collection loop now has an explicit player speech command,
+`/evidence`, which uses the existing NPC evidence handlers without waiting for AI.
+Grace supplies the photo in town; Sarah Mills supplies the library clue; Teacher
+Elena visits Grace in town and supplies the school clue. The teacher is registered
+through EntityManager and reused on town re-entry. The command is accepted only
+for direct player speech within 48px; hearing another NPC or distant speech cannot
+award evidence. It works while autonomous AI is paused or waiting on a request.
+Normal conversation still uses local AI with scripted failure responses.
+
+An on-screen objective gives witness/location instructions and explains Space,
+`/evidence`, Enter. The completion overlay accurately calls this an evidence
+collection prototype: Maya's fate and the full mystery remain unresolved. This
+adds a supported collection route; it does not complete the intended story campaign
+or wire StoryProgressManager chapters.
+
+Town autosave now continues after the photo and library autosave records subsequent
+inventory changes. The shared checkpoint service saves the active scene, inventory,
+position and inventory-derived objective; unchanged inventory avoids repeated
+writes, and failed writes retry after 30 seconds. Normal checks run every 2 seconds
+following a 5-second scene-start delay. Abrupt closing before that check can lose
+the newest change. Scene-owned timers end on shutdown.
+
+QuickSpeechUI now removes its DOM and key listener on shutdown and uses scene-owned
+timers, so delayed reopening cannot leave an old speech input across transitions.
+
+## Remaining completion gaps
+
+- No native browser or human playthrough has demonstrated the collection route,
+  teacher approach, HUD layout, scene transitions or checkpoint timers.
+- Story chapters, school interior, police station interactions and Maya's resolution
+  remain unfinished. The teacher's town visit supplies testimony, not a school level.
 - Art/license provenance, browser/iframe compatibility, layout, actual native
   input, AI response quality and accessibility need review. No asset ownership or
   cross-browser performance claim follows from a build or unit test.
+- Human tester recruitment remains pending a verified accessible build and an
+  authorized third-party outreach channel. No sessions or invitations claimed.
 
 ## Fixed photo checkpoint defect
 
@@ -48,7 +66,10 @@ fix. It still does not validate browser timers, renderer or player interaction.
 The original 15 suites / 72 tests cover targeted paths, often with scene/render/AI
 mocks. They do not assert all behaviors or demonstrate an ending. The production
 Playwright smoke teleports to portals and injects a save fixture, so even a passing
-smoke would not prove a normal full playthrough. Current worker browser launch is
+smoke would not prove a normal full playthrough. The new EvidenceInvestigation integration suite exercises real speech/tool handlers,
+actual inventory, checkpoint serialization/restoration and victory state. It uses
+mocked renderer, distances and scene services; it does not prove navigation.
+Current worker browser launch is
 blocked before gameplay: no smoke checks ran. CI workflow upload is separately
 blocked by missing OAuth workflow scope; it has not run.
 

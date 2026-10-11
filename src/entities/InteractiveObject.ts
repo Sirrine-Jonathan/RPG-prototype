@@ -1,5 +1,11 @@
 import { Scene } from 'phaser';
-import { NPCTool } from '../services/AIService';
+
+// Object actions are descriptors dispatched through scene events, not actor handlers.
+export interface NPCTool {
+    name: string;
+    description: string;
+    parameters?: Record<string, unknown>;
+}
 
 export interface InteractionResult {
     success: boolean;

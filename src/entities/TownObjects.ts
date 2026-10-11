@@ -1,6 +1,6 @@
 import { Scene } from 'phaser';
 import { InteractiveObject, InteractionResult } from './InteractiveObject';
-import { NPCTool } from '../services/AIService';
+import type { NPCTool } from './InteractiveObject';
 import { Debug } from '../utils/Debug';
 
 export class WellObject extends InteractiveObject {

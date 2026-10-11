@@ -3,6 +3,7 @@ import { SpeechBubble } from "../ui/SpeechBubble";
 import { ActionBubble } from "../ui/ActionBubble";
 import { BaseActor, Tool } from "./BaseActor";
 import { EventBus } from "../systems/EventBus";
+import { InventorySystem } from "../systems/InventorySystem";
 import { Logger, LogTag } from "../utils/Logger";
 
 export class PersistentNPC extends BaseActor {

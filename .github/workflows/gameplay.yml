@@ -1,0 +1,34 @@
+name: Production gameplay
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: node node_modules/vitest/vitest.mjs run
+      - run: node node_modules/typescript/bin/tsc --noEmit
+      - run: node node_modules/vite/bin/vite.js build --outDir build-gameplay-ci
+      - run: npm install --prefix .browser-tools --no-audit --no-fund playwright@1.63.0
+      - run: node .browser-tools/node_modules/playwright/cli.js install --with-deps chromium
+      - run: node scripts/gameplay-check.cjs build-gameplay-ci gameplay-evidence
+        env:
+          NODE_PATH: .browser-tools/node_modules
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: production-gameplay-evidence
+          path: gameplay-evidence/
+          if-no-files-found: warn

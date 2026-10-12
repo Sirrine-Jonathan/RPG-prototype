@@ -6,7 +6,7 @@ const path = require('node:path');
 const root = path.resolve(process.argv[2] || 'dist');
 const output = path.resolve(process.argv[3] || 'gameplay-evidence');
 const browserName = process.env.RPG_BROWSER || 'chromium';
-const evidence = { status: 'running', browser: browserName, checks: [], errors: [], consoleErrors: [], missingAssets: [] };
+const evidence = { status: 'running', browser: browserName, checks: [], limitations: ['Automated smoke checks only; portal setup teleports the player, checkpoints use synthetic inventory, and no human/full-mystery playthrough or AI generation is tested.'], errors: [], consoleErrors: [], missingAssets: [] };
 
 async function main() {
   let browser;
@@ -48,8 +48,13 @@ async function main() {
     });
     async function check(name, action) {
       phase = name;
-      const detail = await action();
-      evidence.checks.push({ name, status: 'passed', detail });
+      try {
+        const detail = await action();
+        evidence.checks.push({ name, status: 'passed', detail });
+      } catch (error) {
+        evidence.checks.push({ name, status: 'failed', message: error.message });
+        throw error;
+      }
     }
     async function clickMenu(label) {
       const point = await page.evaluate(label => {
@@ -141,6 +146,7 @@ async function main() {
       assert.deepEqual(saved.playerInventory, fixture.playerInventory);
       assert.deepEqual(saved.playerPosition, fixture.playerPosition);
       assert.equal(saved.currentScene, fixture.currentScene);
+      assert.equal(saved.gameProgress?.hasPhoto, false, 'Checkpoint claims a photo absent from the restored inventory');
       return saved;
     });
     await check('new game clears a loaded checkpoint', async () => {
@@ -157,6 +163,7 @@ async function main() {
       assert.equal(state.previousCheckpoint, null, 'New Game retained the previous checkpoint');
       assert.deepEqual(state.saved.playerInventory, [], 'New Game retained synthetic evidence');
       assert.equal(state.saved.currentScene, 'NewTownScene');
+      assert.equal(state.saved.gameProgress?.hasPhoto, false, 'New Game claims photo evidence despite an empty inventory');
       return state;
     });
     await check('runtime and asset integrity', async () => {

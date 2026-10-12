@@ -2,6 +2,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { assertPhotoConsistency } = require('./checkpoint-invariants.cjs');
 
 const root = path.resolve(process.argv[2] || 'dist');
 const output = path.resolve(process.argv[3] || 'gameplay-evidence');
@@ -46,14 +47,14 @@ async function main() {
       evidence.missingAssets.push(relative);
       await route.fulfill({ status: 404, body: 'Missing' });
     });
-    async function check(name, action) {
+    async function check(name, action, continueOnFailure = false) {
       phase = name;
       try {
         const detail = await action();
         evidence.checks.push({ name, status: 'passed', detail });
       } catch (error) {
         evidence.checks.push({ name, status: 'failed', message: error.message });
-        throw error;
+        if (!continueOnFailure) throw error;
       }
     }
     async function clickMenu(label) {
@@ -146,9 +147,9 @@ async function main() {
       assert.deepEqual(saved.playerInventory, fixture.playerInventory);
       assert.deepEqual(saved.playerPosition, fixture.playerPosition);
       assert.equal(saved.currentScene, fixture.currentScene);
-      assert.equal(saved.gameProgress?.hasPhoto, false, 'Checkpoint claims a photo absent from the restored inventory');
+      assertPhotoConsistency(saved);
       return saved;
-    });
+    }, true);
     await check('new game clears a loaded checkpoint', async () => {
       await page.reload();
       await page.waitForFunction(() => window.game?.scene.isActive('MainMenuScene'));
@@ -163,15 +164,16 @@ async function main() {
       assert.equal(state.previousCheckpoint, null, 'New Game retained the previous checkpoint');
       assert.deepEqual(state.saved.playerInventory, [], 'New Game retained synthetic evidence');
       assert.equal(state.saved.currentScene, 'NewTownScene');
-      assert.equal(state.saved.gameProgress?.hasPhoto, false, 'New Game claims photo evidence despite an empty inventory');
+      assertPhotoConsistency(state.saved);
       return state;
-    });
+    }, true);
     await check('runtime and asset integrity', async () => {
       assert.deepEqual(evidence.errors, [], 'Uncaught browser errors');
       assert.deepEqual(evidence.missingAssets, [], 'Missing build assets');
       return { consoleErrors: evidence.consoleErrors.length };
     });
-    evidence.status = 'passed';
+    evidence.status = evidence.checks.some(check => check.status === 'failed') ? 'failed' : 'passed';
+    if (evidence.status === 'failed') process.exitCode = 1;
   } catch (error) {
     evidence.status = phase === 'browser-launch' ? 'blocked-before-gameplay' : 'failed';
     evidence.failure = { phase, message: error.message.split('Browser logs:')[0].trim() };

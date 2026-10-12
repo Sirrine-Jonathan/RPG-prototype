@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { assertPhotoConsistency } = require('./checkpoint-invariants.cjs');
+const { recordGameplayCheck } = require('./record-gameplay-check.cjs');
 
 const root = path.resolve(process.argv[2] || 'dist');
 const output = path.resolve(process.argv[3] || 'gameplay-evidence');
@@ -49,13 +50,7 @@ async function main() {
     });
     async function check(name, action, continueOnFailure = false) {
       phase = name;
-      try {
-        const detail = await action();
-        evidence.checks.push({ name, status: 'passed', detail });
-      } catch (error) {
-        evidence.checks.push({ name, status: 'failed', message: error.message });
-        if (!continueOnFailure) throw error;
-      }
+      await recordGameplayCheck(evidence.checks, name, action, continueOnFailure);
     }
     async function clickMenu(label) {
       const point = await page.evaluate(label => {
@@ -130,7 +125,7 @@ async function main() {
         return state;
       });
     }
-    await check('town checkpoint reload', async () => {
+    await check('town checkpoint reload', async observe => {
       const fixture = { currentScene: 'NewTownScene', playerPosition: { x: 812, y: 640 },
         playerInventory: [{ id: 'smoke-evidence', name: 'Smoke evidence', description: 'Synthetic test item' }] };
       await page.evaluate(fixture => localStorage.setItem('whispering_stones_save', JSON.stringify(fixture)), fixture);
@@ -144,13 +139,37 @@ async function main() {
         if (!scene.saveGameState()) throw new Error('Checkpoint write failed');
         return JSON.parse(localStorage.getItem('whispering_stones_save'));
       });
+      observe(saved);
       assert.deepEqual(saved.playerInventory, fixture.playerInventory);
       assert.deepEqual(saved.playerPosition, fixture.playerPosition);
       assert.equal(saved.currentScene, fixture.currentScene);
       assertPhotoConsistency(saved);
       return saved;
     }, true);
-    await check('new game clears a loaded checkpoint', async () => {
+    for (const id of ['photo', "Maya's Photo"]) {
+      await check(`photo checkpoint reload: ${id}`, async observe => {
+        const fixture = { currentScene: 'NewTownScene', playerPosition: { x: 812, y: 640 },
+          playerInventory: [{ id, name: 'Photo fixture', description: 'Synthetic test item' }],
+          gameProgress: { hasPhoto: false } };
+        await page.evaluate(fixture => localStorage.setItem('whispering_stones_save', JSON.stringify(fixture)), fixture);
+        await page.reload();
+        await page.waitForFunction(() => window.game?.scene.isActive('MainMenuScene'));
+        await clickMenu('Load Game');
+        await waitForLevel('NewTownScene');
+        const saved = await page.evaluate(() => {
+          const scene = window.game.scene.getScene('NewTownScene');
+          if (!scene.saveGameState()) throw new Error('Photo checkpoint write failed');
+          return JSON.parse(localStorage.getItem('whispering_stones_save'));
+        });
+        observe({ fixture, saved });
+        assert.deepEqual(saved.playerInventory, fixture.playerInventory, 'Photo inventory changed on reload');
+        assert.deepEqual(saved.playerPosition, fixture.playerPosition, 'Photo checkpoint position changed');
+        assert.equal(saved.currentScene, fixture.currentScene);
+        assertPhotoConsistency(saved);
+        return { fixture, saved };
+      }, true);
+    }
+    await check('new game clears a loaded checkpoint', async observe => {
       await page.reload();
       await page.waitForFunction(() => window.game?.scene.isActive('MainMenuScene'));
       await clickMenu('New Game');
@@ -161,6 +180,7 @@ async function main() {
         if (!scene.saveGameState()) throw new Error('New-game checkpoint write failed');
         return { previousCheckpoint, saved: JSON.parse(localStorage.getItem('whispering_stones_save')) };
       });
+      observe(state);
       assert.equal(state.previousCheckpoint, null, 'New Game retained the previous checkpoint');
       assert.deepEqual(state.saved.playerInventory, [], 'New Game retained synthetic evidence');
       assert.equal(state.saved.currentScene, 'NewTownScene');

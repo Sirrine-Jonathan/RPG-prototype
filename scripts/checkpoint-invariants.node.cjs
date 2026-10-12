@@ -41,3 +41,19 @@ test('both consistent saved checkpoints produce a narrowly scoped result', () =>
     { name: 'new game clears a loaded checkpoint', status: 'passed', detail: { saved: checkpoint([], false) } }
   ] }).status, 'consistent');
 });
+test('expanded audit requires both positive photo reloads and their corresponding IDs', () => {
+  const base = [
+    { name: 'town checkpoint reload', status: 'passed', detail: checkpoint([], false) },
+    { name: 'new game clears a loaded checkpoint', status: 'passed', detail: { saved: checkpoint([], false) } }
+  ];
+  const photos = ['photo', "Maya's Photo"].map(id => ({
+    name: `photo checkpoint reload: ${id}`, status: 'passed', detail: { saved: checkpoint([id], true) }
+  }));
+  const options = { requirePhotoReloads: true };
+  assert.equal(auditCheckpointEvidence({ checks: base }, options).status, 'unverified');
+  assert.equal(auditCheckpointEvidence({ checks: [...base, ...photos] }, options).status, 'consistent');
+  assert.equal(auditCheckpointEvidence({ checks: [...base, photos[0]] }, options).status, 'unverified');
+  for (const saved of [checkpoint([], false), checkpoint(["Maya's Photo"], true)]) {
+    assert.equal(auditCheckpointEvidence({ checks: [...base, { ...photos[0], detail: { saved } }, photos[1]] }, options).status, 'inconsistent');
+  }
+});

@@ -50,7 +50,7 @@ it('delivers scripted player dialogue on AI failure and stays silent for NPC spe
   const npc = makeNPC(new Error('AI unavailable'), true);
   await npc.handleEvent('player_speech', { message: 'Where is a clue?', distance: 40 });
   expect(npc.handleSpeak).toHaveBeenCalledTimes(1);
-  expect(npc.handleSpeak.mock.calls[0][0]).toContain('cannot provide new clues');
+  expect(npc.handleSpeak.mock.calls[0][0]).toContain('say /evidence');
   await npc.handleEvent('npc_speech_heard', { speakerName: 'Bob', message: 'Hello', distance: 40 });
   expect(npc.handleSpeak).toHaveBeenCalledTimes(1);
   expect(npc.pendingLLMRequest).toBeUndefined();

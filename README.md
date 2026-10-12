@@ -1,6 +1,6 @@
 # 🎮 Whispering Stones RPG
 
-A sophisticated RPG with AI-driven NPCs, dynamic conversations, and a professional level editor.
+A development RPG prototype with AI-driven NPCs, town/library exploration, and a level editor. A complete campaign is not yet verified. See [the gameplay audit](docs/GAMEPLAY-AUDIT.md) for concrete completion gaps and test limits.
 
 ## 🚀 Quick Start
 

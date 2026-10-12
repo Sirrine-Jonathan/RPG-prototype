@@ -4,6 +4,7 @@ import { PortalService } from "../systems/PortalService";
 import { CouncilLeaderNPC } from "../entities/CouncilLeaderNPC";
 import { AssistantNPC } from "../entities/AssistantNPC";
 import { ChatInterface } from "../ui/ChatInterface";
+import { saveEvidenceCheckpoint, watchEvidenceCheckpoint } from "../systems/EvidenceCheckpoint";
 import { InventorySystem } from "../systems/InventorySystem";
 
 export class NewTownScene extends NewGameplayScene {
@@ -41,7 +42,7 @@ export class NewTownScene extends NewGameplayScene {
         this.createSceneNPCs();
         this.restoreGameState();
 
-        // Set up auto-save when player gets Maya's photo
+        // Save subsequent inventory changes as well as the first photo
         this.setupAutoSave();
       })
       .catch((error) => {
@@ -164,6 +165,14 @@ export class NewTownScene extends NewGameplayScene {
       }
     );
 
+    const teacher = this.gameManager.entityManager.createNPC("teacher_elena", this, {
+      name: "Teacher Elena", spriteKey: "amelia", x: 900, y: 880,
+      personality: "Concerned teacher visiting Grace about Maya",
+      background: "Maya's teacher. Visiting Grace in town to share Maya's questions about missing persons cases.",
+      goals: ["Give Detective Riley the school clue"],
+    });
+    this.gameManager.entityManager.addNPCToScene(teacher.id, this.scene.key);
+
     this.gameManager.entityManager.addNPCToScene(margaret.id, this.scene.key);
     this.gameManager.entityManager.addNPCToScene(assistant.id, this.scene.key);
 
@@ -176,59 +185,11 @@ export class NewTownScene extends NewGameplayScene {
   }
 
   private setupAutoSave(): void {
-    // Listen for inventory changes to detect when player gets Maya's photo
-    const inventorySystem = InventorySystem.getInstance();
-
-    // Check periodically if player has Maya's photo (simple approach)
-    const checkForPhoto = () => {
-      const player = this.gameManager.entityManager.getPlayer();
-      const playerInventory = player ? inventorySystem.getInventory(player.id) : [];
-      const hasPhoto = playerInventory.some(
-        (item) => item.id === "Maya's Photo"
-      );
-
-      if (hasPhoto) {
-        console.log("🏘️ Player received Maya's photo, auto-saving...");
-        if (this.saveGameState()) return;
-        // Storage may recover; retry slowly without interrupting gameplay.
-        this.time.delayedCall(30000, checkForPhoto);
-        return;
-      }
-
-      // Check again in 2 seconds
-      this.time.delayedCall(2000, checkForPhoto);
-    };
-
-    // Start checking after a short delay
-    this.time.delayedCall(5000, checkForPhoto);
+    watchEvidenceCheckpoint(this, () => this.saveGameState());
   }
 
   private saveGameState(): boolean {
-    const inventorySystem = InventorySystem.getInstance();
-    const player = this.gameManager.entityManager.getPlayer();
-    if (!player) return false;
-    const playerInventory = inventorySystem.getInventory(player.id);
-
-    const gameState = {
-      currentScene: "NewTownScene",
-      playerPosition: player.getPosition(),
-      playerInventory: playerInventory,
-      gameProgress: {
-        metMargaret: true,
-        hasPhoto: true,
-        currentObjective: "investigate_library",
-      },
-      timestamp: new Date().toISOString(),
-    };
-
-    try {
-      localStorage.setItem("whispering_stones_save", JSON.stringify(gameState));
-      console.log("🏘️ Game state saved successfully");
-      return true;
-    } catch (error) {
-      console.error("🏘️ Auto-save failed; progress was not saved", error);
-      return false;
-    }
+    return saveEvidenceCheckpoint(this);
   }
 
   protected getSceneWidth(): number {

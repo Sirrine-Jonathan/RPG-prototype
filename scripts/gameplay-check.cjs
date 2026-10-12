@@ -81,7 +81,7 @@ async function main() {
       await clickMenu('New Game');
       await waitForLevel('NewTownScene');
       const state = await snapshot('NewTownScene');
-      assert.equal(state.npcs, 2);
+      assert.equal(state.npcs, 3);
       assert.deepEqual(state.active, ['NewTownScene']);
       return state;
     });

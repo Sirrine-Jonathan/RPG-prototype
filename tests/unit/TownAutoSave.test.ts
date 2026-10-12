@@ -8,8 +8,8 @@ import { NewTownScene } from '../../src/scenes/NewTownScene';
 import { InventorySystem } from '../../src/systems/InventorySystem';
 afterEach(() => vi.restoreAllMocks());
 
-it('polls the persistent player inventory using scene-owned timers and stops after saving', () => {
-  const photo = { id: "Maya's Photo", name: "Maya's Photo" };
+it('polls the persistent player inventory using scene-owned timers and continues watching after saving', () => {
+  const photo = { id: "mayas_photo", name: "Maya's Photo" };
   const inventory = vi.spyOn(InventorySystem.getInstance(), 'getInventory');
   inventory.mockReturnValueOnce([]).mockReturnValue([photo] as any);
   const callbacks: Array<() => void> = [];
@@ -26,11 +26,11 @@ it('polls the persistent player inventory using scene-owned timers and stops aft
   expect(saveGameState).not.toHaveBeenCalled();
   callbacks.shift()!();
   expect(saveGameState).toHaveBeenCalledTimes(1);
-  expect(callbacks).toHaveLength(0);
+  expect(callbacks).toHaveLength(1);
 });
 
 it('serializes the photo from the same inventory used by item transfers', () => {
-  const photo = { id: "Maya's Photo", name: "Maya's Photo" };
+  const photo = { id: "mayas_photo", name: "Maya's Photo" };
   const inventory = vi.spyOn(InventorySystem.getInstance(), 'getInventory').mockReturnValue([photo] as any);
   const setItem = vi.fn();
   vi.stubGlobal('localStorage', { setItem });
@@ -67,8 +67,8 @@ it('serializes the photo from the same inventory used by item transfers', () => 
   } finally { inventory.reset(); }
 });
 
-it('retries failed autosaves slowly and stops only after successful storage', () => {
-  vi.spyOn(InventorySystem.getInstance(), 'getInventory').mockReturnValue([{ id: "Maya's Photo" }] as any);
+it('retries failed autosaves slowly and continues after successful storage', () => {
+  vi.spyOn(InventorySystem.getInstance(), 'getInventory').mockReturnValue([{ id: "mayas_photo" }] as any);
   const callbacks: Array<() => void> = [];
   const delayedCall = vi.fn((_delay, callback) => callbacks.push(callback));
   const saveGameState = vi.fn().mockReturnValueOnce(false).mockReturnValue(true);
@@ -80,7 +80,7 @@ it('retries failed autosaves slowly and stops only after successful storage', ()
   expect(delayedCall.mock.calls[1][0]).toBe(30000);
   callbacks.shift()!();
   expect(saveGameState).toHaveBeenCalledTimes(2);
-  expect(callbacks).toHaveLength(0);
+  expect(callbacks).toHaveLength(1);
 });
 
 it('reports denied storage as a failed save without throwing or claiming success', () => {
@@ -96,4 +96,31 @@ it('reports denied storage as a failed save without throwing or claiming success
     expect(log).not.toHaveBeenCalled();
     expect(report).toHaveBeenCalledWith('🏘️ Auto-save failed; progress was not saved', error);
   } finally { vi.unstubAllGlobals(); }
+});
+
+it('does not claim photo acquisition when saving an empty inventory', () => {
+  vi.spyOn(InventorySystem.getInstance(), 'getInventory').mockReturnValue([]);
+  const setItem = vi.fn();
+  vi.stubGlobal('localStorage', { setItem });
+  try {
+    (NewTownScene.prototype as any).saveGameState.call({ gameManager: { entityManager: {
+      getPlayer: () => ({ id: 'Detective Riley', getPosition: () => ({ x: 1, y: 2 }) })
+    } } });
+    const save = JSON.parse(setItem.mock.calls[0][1]);
+    expect(save.gameProgress.hasPhoto).toBe(false);
+    expect(save.gameProgress.currentObjective).toBe('meet_grace');
+  } finally { vi.unstubAllGlobals(); }
+});
+
+it('still autosaves legacy photo IDs from existing checkpoints', () => {
+  vi.spyOn(InventorySystem.getInstance(), 'getInventory').mockReturnValue([{ id: "Maya's Photo" }] as any);
+  let callback: () => void = () => {};
+  const saveGameState = vi.fn().mockReturnValue(true);
+  (NewTownScene.prototype as any).setupAutoSave.call({
+    time: { delayedCall: (_delay: number, action: () => void) => { callback = action; } },
+    gameManager: { entityManager: { getPlayer: () => ({ id: 'Detective Riley' }) } },
+    saveGameState,
+  });
+  callback();
+  expect(saveGameState).toHaveBeenCalledOnce();
 });

@@ -3,6 +3,8 @@ import { GameManager } from "../core/GameManager";
 import { PortalData } from "../core/SceneTransitionManager";
 import { AssetManager } from "../systems/AssetManager";
 import { QuickSpeechUI } from "../ui/QuickSpeechUI";
+import { InventorySystem } from "../systems/InventorySystem";
+import { investigationObjective } from "../systems/EvidenceCheckpoint";
 import { Logger, LogTag } from "../utils/Logger";
 
 export abstract class NewGameplayScene extends BaseScene {
@@ -58,6 +60,23 @@ export abstract class NewGameplayScene extends BaseScene {
     
     // Load scene-specific content
     this.loadSceneContent();
+    const objective = this.add.text(12, 12, '', {
+      fontSize: '14px', color: '#ffffff', backgroundColor: '#161616',
+      padding: { x: 8, y: 8 }, wordWrap: { width: 430 },
+    }).setScrollFactor(0).setDepth(1000);
+    const refreshObjective = () => {
+      const player = this.gameManager.entityManager.getPlayer();
+      const stage = investigationObjective(player ? InventorySystem.getInstance().getInventory(player.id) : []);
+      const hints: Record<string, string> = {
+        meet_grace: 'Meet Grace in town (795, 880) and request the photo.',
+        investigate_library: 'Visit the library and request evidence from Sarah Mills.',
+        interview_teacher: 'Return to town and request evidence from Teacher Elena (900, 880).',
+        evidence_complete: 'Three witness clues collected. Prototype complete; full mystery unfinished.',
+      };
+      objective.setText('Prototype investigation\n' + hints[stage] + '\nMove within 48px of the witness. Press Space, type /evidence, then Enter.');
+    };
+    refreshObjective();
+    this.time.addEvent({ delay: 1000, loop: true, callback: refreshObjective });
   }
   
   protected createInitialEntities(): void {

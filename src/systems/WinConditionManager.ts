@@ -7,6 +7,7 @@ export class WinConditionManager {
     'school_clue'
   ]);
   private collectedEvidence: Set<string> = new Set();
+  private winOverlay?: HTMLElement;
 
   static getInstance(): WinConditionManager {
     if (!WinConditionManager.instance) {
@@ -16,6 +17,7 @@ export class WinConditionManager {
   }
 
   addEvidence(evidenceId: string): void {
+    if (!this.requiredEvidence.has(evidenceId)) return;
     this.collectedEvidence.add(evidenceId);
     console.log(`🔍 Evidence collected: ${evidenceId}`);
     this.checkWinCondition();
@@ -35,7 +37,7 @@ export class WinConditionManager {
 
   private triggerWin(): void {
     this.gameWon = true;
-    console.log("🎉 GAME WON! Detective Riley solved Maya's disappearance!");
+    console.log("Prototype evidence collection complete.");
     
     // Emit win event
     const gameManager = (globalThis as any).gameManager;
@@ -69,19 +71,39 @@ export class WinConditionManager {
       text-align: center;
     `;
     
-    winDiv.innerHTML = `
-      <div>
-        <h1>🎉 MYSTERY SOLVED! 🎉</h1>
-        <p>Detective Riley successfully investigated Maya's disappearance!</p>
-        <p>Evidence collected: ${Array.from(this.collectedEvidence).join(', ')}</p>
-        <button onclick="this.parentElement.parentElement.remove()" 
-                style="margin-top: 20px; padding: 10px 20px; font-size: 16px;">
-          Continue
-        </button>
-      </div>
-    `;
-    
+    const content = document.createElement('div');
+    const heading = document.createElement('h1');
+    heading.textContent = 'Evidence collected';
+    const description = document.createElement('p');
+    description.textContent = "You collected the three witness clues. This ends the prototype investigation; Maya's fate and the full mystery remain unresolved.";
+    const evidence = document.createElement('p');
+    evidence.textContent = 'Evidence collected: ' + Array.from(this.collectedEvidence).join(', ');
+    const button = document.createElement('button');
+    button.textContent = 'Continue';
+    button.style.cssText = 'margin-top: 20px; padding: 10px 20px; font-size: 16px;';
+    button.addEventListener('click', () => winDiv.remove());
+    content.append(heading, description, evidence, button);
+    winDiv.appendChild(content);
+    this.winOverlay?.remove();
+    this.winOverlay = winDiv;
+
     document.body.appendChild(winDiv);
+  }
+
+  reset(): void {
+    this.collectedEvidence.clear();
+    this.gameWon = false;
+    this.winOverlay?.remove();
+    this.winOverlay = undefined;
+  }
+
+  // Checkpoint restoration records state without replaying awards or win events.
+  restoreEvidence(evidenceIds: string[]): void {
+    this.reset();
+    for (const id of evidenceIds) {
+      if (this.requiredEvidence.has(id)) this.collectedEvidence.add(id);
+    }
+    this.gameWon = [...this.requiredEvidence].every(id => this.collectedEvidence.has(id));
   }
 
   isGameWon(): boolean {

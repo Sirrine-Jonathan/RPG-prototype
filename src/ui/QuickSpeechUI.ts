@@ -9,14 +9,16 @@ export class QuickSpeechUI {
     private isVisible: boolean = false;
     private scene?: Phaser.Scene;
     private spaceKey?: Phaser.Input.Keyboard.Key;
+    private destroyed = false;
 
     constructor(scene: Phaser.Scene) {
         this.scene = scene;
         this.setupKeyListener();
+        scene.events.once("shutdown", () => this.destroy());
     }
 
     private setupKeyListener(): void {
-        if (!this.scene?.input?.keyboard) return;
+        if (this.destroyed || !this.scene?.input?.keyboard) return;
         
         const spaceKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
         spaceKey.on('down', () => {
@@ -40,7 +42,7 @@ export class QuickSpeechUI {
     }
 
     private show(): void {
-        if (this.isVisible) return;
+        if (this.destroyed || this.isVisible) return;
         
         this.isVisible = true;
         // Remove the spacebar key listener while UI is open
@@ -51,7 +53,7 @@ export class QuickSpeechUI {
         
         if (this.container) {
             // Reuse existing container with a small delay to ensure proper rendering
-            setTimeout(() => {
+            this.scene?.time.delayedCall(10, () => {
                 if (this.container) {
                     this.container.style.display = 'flex';
                     this.container.style.visibility = 'visible';
@@ -61,7 +63,7 @@ export class QuickSpeechUI {
                     this.container.offsetHeight;
                     this.textarea!.focus();
                 }
-            }, 10);
+            });
         } else {
             // Create new container
             this.createUI();
@@ -74,10 +76,10 @@ export class QuickSpeechUI {
         
         this.isVisible = false;
         // Recreate the spacebar key listener
-        setTimeout(() => {
+        this.scene?.time.delayedCall(50, () => {
             this.setupKeyListener();
             console.log('🎯 Spacebar key listener recreated');
-        }, 50);
+        });
         if (this.container) {
             // Blur the textarea before hiding
             if (this.textarea) {
@@ -275,6 +277,19 @@ export class QuickSpeechUI {
         this.scene.time.delayedCall(3000, () => {
             speechBubble.hide();
         });
+    }
+
+    public destroy(): void {
+        if (this.destroyed) return;
+        this.destroyed = true;
+        this.spaceKey?.destroy();
+        this.spaceKey = undefined;
+        this.container?.remove();
+        this.container = undefined;
+        this.textarea = undefined;
+        this.sendButton = undefined;
+        this.isVisible = false;
+        this.scene = undefined;
     }
 
     private getPlayerPosition(): { x: number; y: number } {

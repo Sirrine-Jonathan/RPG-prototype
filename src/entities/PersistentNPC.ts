@@ -307,6 +307,20 @@ export class PersistentNPC extends BaseActor {
   private async handleEvent(eventType: string, eventData: any): Promise<void> {
     this.logger.npcBehavior(this.name, `Handling event "${eventType}"`);
 
+    // A disclosed, explicit player command keeps evidence collection independent
+    // of model availability. Ordinary conversation still uses local AI.
+    if (typeof eventData.message === "string" && eventData.message.trim().toLowerCase() === "/evidence") {
+      if (eventType !== "player_speech" || !Number.isFinite(eventData.distance)
+        || eventData.distance > 48 || eventData.distance < 0) return;
+      const toolName = this.name === "Grace Sirrine" ? "give_mayas_photo"
+        : this.id === "librarian_sarah" || this.id === "Librarian Sarah" ? "give_library_clue"
+        : this.id === "teacher_elena" ? "give_school_clue" : undefined;
+      const tool = this.getPersistentTools().find(tool => tool.name === toolName);
+      if (tool?.handler) await tool.handler({});
+      else this.say("I have no case evidence to give. Ask Grace, Sarah Mills, or Teacher Elena.");
+      return;
+    }
+
     let chosenAction: string = "none";
 
     // ALWAYS add event message to conversation history
@@ -500,6 +514,12 @@ export class PersistentNPC extends BaseActor {
   public triggerEvent(eventType: string, eventData?: any): void {
     this.logger.npcEventProcessed(this.name, eventType, eventData);
     this.logger.npcBehavior(this.name, `Received event "${eventType}"`);
+
+    if (eventType === "player_speech" && eventData?.message?.trim().toLowerCase() === "/evidence") {
+      // Explicit game interaction must work even while AI is busy or paused.
+      void this.handleEvent(eventType, eventData).catch(error => console.error("Evidence request failed", error));
+      return;
+    }
 
     // Check if this NPC is paused by the AI system
     const gameManager = (globalThis as any).gameManager;
@@ -1221,6 +1241,11 @@ BEHAVIORAL GUIDELINES:
     const inventory = InventorySystem.getInstance();
     const gameManager = (globalThis as any).gameManager;
     
+    if (inventory.hasItem("Detective Riley", "mayas_photo") || inventory.hasItem("Detective Riley", "Maya's Photo")) {
+      this.say("You already have Maya's photo. Ask Sarah Mills at the library next.");
+      return { success: true, message: "Photo already collected" };
+    }
+
     // Add Maya's photo to Grace's inventory if not present
     const graceInventory = inventory.getInventory(this.name);
     const hasPhoto = graceInventory.some(item => item.id === "mayas_photo" || item.name.includes("Maya"));
@@ -1261,6 +1286,11 @@ BEHAVIORAL GUIDELINES:
     const inventory = InventorySystem.getInstance();
     const gameManager = (globalThis as any).gameManager;
     
+    if (inventory.hasItem("Detective Riley", evidenceId)) {
+      this.say(`You already have ${evidenceName}.`);
+      return { success: true, message: "Evidence already collected" };
+    }
+
     // Add evidence to NPC inventory
     inventory.addItem(this.name, {
       id: evidenceId,
